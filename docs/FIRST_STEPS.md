@@ -9,6 +9,8 @@ This first version creates a working AMADEUS shell.
 - Chat module connected to the LLM Client.
 - Ollama LLM Client using `llama3.2:latest` by default.
 - Read-only `[file]` annotation support.
+- Read-only project context for normal file/module questions.
+- Local chat persistence for the current conversation.
 - PyQt6 GUI window.
 - Placeholder folders for future modules.
 - Documentation for every module folder.
@@ -20,6 +22,10 @@ You can open the AMADEUS window, type a message, press Send or Enter, and see an
 If Ollama is missing or the model has not been pulled yet, AMADEUS returns a readable setup error instead of crashing.
 
 You can also send `[file]` to list readable project module folders, or `[file][amadeus_core]` to read a module's documentation.
+
+If you ask a normal question about module files or README files, Core gives Chat a safe project overview so AMADEUS can answer using her own documentation.
+
+The GUI loads recent chat history from local storage when it starts.
 
 ## What Should Come Next
 

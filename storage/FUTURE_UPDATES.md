@@ -1,5 +1,7 @@
 # Storage Future Updates
 
-- Store conversations.
 - Store memory.
 - Store module data safely.
+- Multiple named conversations.
+- Chat search.
+- Export/import tools.

@@ -26,13 +26,13 @@ class AmadeusChatModule:
         # Chat depends on an LLM boundary, not directly on Core or GUI.
         self.llm_client = llm_client or OllamaClient()
 
-    def handle_message(self, message: str) -> str:
+    def handle_message(self, message: str, context: str | None = None) -> str:
         """Return an AMADEUS response for the provided user message."""
         clean_message = message.strip()
         if not clean_message:
             return "AMADEUS needs a message before she can respond."
 
-        prompt = self._build_prompt(clean_message)
+        prompt = self._build_prompt(clean_message, context=context)
 
         try:
             return self.llm_client.generate(
@@ -42,7 +42,16 @@ class AmadeusChatModule:
         except OllamaClientError as error:
             return f"AMADEUS LLM error: {error}"
 
-    def _build_prompt(self, message: str) -> str:
+    def _build_prompt(self, message: str, context: str | None = None) -> str:
         """Build the first simple prompt shape for local AMADEUS chat."""
-        # Reasoning and memory will connect here later. For now, Chat sends only the user text.
+        # Context is supplied by Core, so Chat can use project knowledge without reading files itself.
+        if context:
+            return (
+                "Use this read-only AMADEUS project context when it is relevant. "
+                "Do not claim you inspected files beyond this context.\n\n"
+                f"{context}\n\n"
+                f"User message:\n{message}\n\n"
+                "Respond as AMADEUS."
+            )
+
         return f"User message:\n{message}\n\nRespond as AMADEUS."

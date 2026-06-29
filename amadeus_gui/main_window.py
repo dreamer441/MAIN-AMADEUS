@@ -46,6 +46,7 @@ class AmadeusMainWindow(QMainWindow):
         self.resize(800, 600)
 
         self._build_ui()
+        self._load_existing_chat_history()
 
     def _build_ui(self) -> None:
         """Create the chat history, input box, and send button."""
@@ -121,6 +122,14 @@ class AmadeusMainWindow(QMainWindow):
         self.message_input.setDisabled(waiting)
         self.send_button.setDisabled(waiting)
         self.status_label.setText("AMADEUS is thinking..." if waiting else "Ready")
+
+    def _load_existing_chat_history(self) -> None:
+        """Load saved chat messages through Core when the GUI starts."""
+        if not hasattr(self.core, "load_chat_history"):
+            return
+
+        for saved_message in self.core.load_chat_history():
+            self._append_message(saved_message.speaker, saved_message.message)
 
     def _remove_worker(self, thread: QThread, worker: ChatResponseWorker) -> None:
         """Forget a completed worker so Qt and Python can clean it up."""

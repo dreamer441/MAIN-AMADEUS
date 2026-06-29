@@ -64,3 +64,15 @@ Annotations are structured commands that start a message with brackets.
 ```
 
 `[file]` lists available module folders. `[file][module_name]` reads that module's documentation files in a controlled, read-only way.
+
+AMADEUS can also use the same read-only project context during normal chat when you ask about project files, modules, README files, or structure.
+
+## Chat Persistence
+
+AMADEUS saves the current local chat to:
+
+```text
+data/chats/current_chat.jsonl
+```
+
+The GUI loads recent messages on startup. Chat history is local runtime data and is ignored by git.

@@ -39,6 +39,15 @@ class ProjectFileReader:
         """List available top-level module folders."""
         return self.indexer.list_module_names()
 
+    def build_project_overview(self) -> str:
+        """Build compact read-only context about documented project modules."""
+        sections = ["Read-only AMADEUS project module overview:"]
+        for module_name in self.list_module_names():
+            documentation = self.read_module_documentation(module_name)
+            sections.append(self._format_module_overview(documentation))
+
+        return "\n\n".join(sections)
+
     def read_module_documentation(self, requested_name: str) -> ModuleDocumentation:
         """Read the approved docs and top-level Python file names for one module."""
         module_path = self.indexer.resolve_module_path(requested_name)
@@ -74,3 +83,14 @@ class ProjectFileReader:
         if lines and lines[0].startswith("#"):
             lines = lines[1:]
         return "\n".join(lines).strip() or "No content found."
+
+    def _format_module_overview(self, documentation: ModuleDocumentation) -> str:
+        """Format one module for safe LLM context without deep code inspection."""
+        python_files = ", ".join(documentation.python_files) or "No top-level Python files."
+        return (
+            f"Module: {documentation.module_name}\n"
+            f"Description: {documentation.readme}\n"
+            f"Current features: {documentation.features}\n"
+            f"Future updates: {documentation.future_updates}\n"
+            f"Top-level Python files: {python_files}"
+        )

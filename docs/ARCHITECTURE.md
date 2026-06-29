@@ -24,7 +24,7 @@ The Reasoning module will eventually decide how AMADEUS should think through a r
 
 ## Storage Persists Memory And Data
 
-The Storage module will eventually persist conversations, memory, and module data.
+The Storage module currently persists the active chat as local JSONL runtime data under `data/chats/`. This is not long-term memory yet; it only lets the GUI resume recent conversation messages.
 
 ## Permissions Protect Risky Actions
 
@@ -41,3 +41,5 @@ Annotations are bracket commands such as `[file]`. Core checks annotations befor
 ## Project File Reader Stays Read-Only
 
 The Project File Reader reads module documentation and top-level Python file names only. It must not edit, delete, or deeply scan the project automatically.
+
+Core may provide this read-only project context to Chat when the user asks about modules, files, README files, or project structure. Chat still does not read files directly.

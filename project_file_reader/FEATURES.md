@@ -5,3 +5,4 @@
 - Reads `README.md`, `FEATURES.md`, and `FUTURE_UPDATES.md` for one requested module.
 - Lists Python files directly inside the requested module folder.
 - Ignores hidden/system folders such as `.git`, `__pycache__`, `.venv`, and `venv`.
+- Builds compact read-only project context for normal chat when Core detects project/file questions.
