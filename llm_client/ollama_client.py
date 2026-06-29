@@ -5,7 +5,7 @@ from typing import Any
 
 
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
-DEFAULT_OLLAMA_MODEL = "qwen3:32b"
+DEFAULT_OLLAMA_MODEL = "llama3.2:latest"
 
 
 class OllamaClientError(RuntimeError):

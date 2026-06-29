@@ -7,3 +7,5 @@
 5. GUI calls Core, not feature modules directly.
 6. Core routes, modules execute.
 7. Placeholder modules should stay simple until their real purpose is implemented.
+8. File reading must stay read-only unless a future permission system explicitly allows more.
+9. Annotation parsing belongs in the Annotation Module, not in Chat.

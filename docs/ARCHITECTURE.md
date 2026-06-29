@@ -33,3 +33,11 @@ The Permissions module will eventually protect file edits, commands, system chan
 ## LLM Client Connects Models
 
 The LLM Client module currently connects AMADEUS to local Ollama models through one stable interface. Future model providers should connect through this module instead of being called directly by GUI or Core.
+
+## Annotations Guide Structured Requests
+
+Annotations are bracket commands such as `[file]`. Core checks annotations before normal chat and routes them to the Annotation module. Annotation handlers execute structured behavior without requiring the Chat module to understand file reading.
+
+## Project File Reader Stays Read-Only
+
+The Project File Reader reads module documentation and top-level Python file names only. It must not edit, delete, or deeply scan the project automatically.

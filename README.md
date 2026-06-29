@@ -14,7 +14,7 @@ This first rebuild is intentionally small. It creates a working shell with:
 
 The app opens a desktop window. You can type a message, press Send or Enter, and AMADEUS routes it through Core to the Chat module.
 
-Chat now uses the local Ollama LLM client. The default model is `qwen3:32b`.
+Chat now uses the local Ollama LLM client. The default lightweight model is `llama3.2:latest`.
 
 ## How To Run
 
@@ -24,11 +24,13 @@ Install Ollama from:
 https://ollama.com
 ```
 
-Pull the default AMADEUS model:
+Pull the default AMADEUS model if it is not already installed:
 
 ```bash
-ollama pull qwen3:32b
+ollama pull llama3.2
 ```
+
+The heavier `qwen3:32b` model can stay installed for later heavier tasks.
 
 Install dependencies:
 
@@ -50,4 +52,15 @@ py -3 main.py
 
 ## Current Scope
 
-This version includes a simple local Ollama LLM connection. It does not include real reasoning, memory, skills, mind map, storage, advanced permissions, streaming responses, or model picker UI yet.
+This version includes a simple local Ollama LLM connection and read-only `[file]` annotations. It does not include real reasoning, memory, skills, mind map, storage, advanced permissions, streaming responses, or model picker UI yet.
+
+## Annotations
+
+Annotations are structured commands that start a message with brackets.
+
+```text
+[file]
+[file][amadeus_core]
+```
+
+`[file]` lists available module folders. `[file][module_name]` reads that module's documentation files in a controlled, read-only way.

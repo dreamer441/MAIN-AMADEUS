@@ -4,3 +4,4 @@
 - Module health/status reporting.
 - Command routing beyond chat.
 - Permission-aware routing for risky actions.
+- More annotation handlers as AMADEUS grows.
