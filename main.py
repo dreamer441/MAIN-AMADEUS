@@ -1,39 +1,21 @@
-"""
-AMADEUS V2 - main.py
+import sys
 
-Purpose:
-    Provide the tiny process entry point for AMADEUS V2 Core.
+from PyQt6.QtWidgets import QApplication
 
-Responsibilities:
-    - Create the AMADEUS application object.
-    - Start AMADEUS Core.
-    - Return a normal process exit code.
-
-Must NOT:
-    - Implement Core startup details.
-    - Import module or submodule internals.
-    - Contain feature logic.
-
-Connected systems:
-    - amadeus_core/app.py
-    - amadeus_core/core_controller.py
-"""
-
-from amadeus_core.app import AmadeusApp
+from amadeus_core import AmadeusCore
+from amadeus_gui import AmadeusMainWindow
 
 
 def main() -> int:
-    """
-    Input:
-        None.
-    Output:
-        Process exit code.
-    Side effects:
-        Starts AMADEUS Core and writes startup logs.
-    """
-    app = AmadeusApp()
-    app.start()
-    return 0
+    """Start AMADEUS Core, create the GUI, and run the desktop event loop."""
+    app = QApplication(sys.argv)
+
+    # Core is created before the GUI so the GUI can route all user actions through it.
+    core = AmadeusCore()
+    window = AmadeusMainWindow(core)
+    window.show()
+
+    return app.exec()
 
 
 if __name__ == "__main__":

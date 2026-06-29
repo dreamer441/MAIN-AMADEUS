@@ -1,32 +1,53 @@
-# AMADEUS V2 Core Foundation
+# AMADEUS
 
-This is the initial Core-only foundation for AMADEUS V2, a local-first modular AI system.
+AMADEUS is a local-first personal AI project designed to grow as a clean modular desktop system.
 
-This version intentionally includes only the Core layer. It does not include Chat, Mind Map, Skills, Reasoning, Storage, RAG, Web, Coding, Drift, UI, or real modules yet.
+This first rebuild is intentionally small. It creates a working shell with:
 
-## Current Scope
+- AMADEUS Core
+- AMADEUS Chat module
+- AMADEUS PyQt6 GUI
+- Ollama local LLM client
+- Placeholder folders for future modules
 
-- Start AMADEUS Core.
-- Load global config.
-- Start console and file logging.
-- Create `PermissionGuard`.
-- Create `ModuleRegistry`.
-- Create `ModuleLoader`.
-- Scan the `modules/` folder.
-- Report that no modules are installed yet.
-- Create `CoreServices`.
-- Exit normally.
+## Current Behavior
+
+The app opens a desktop window. You can type a message, press Send or Enter, and AMADEUS routes it through Core to the Chat module.
+
+Chat now uses the local Ollama LLM client. The default model is `qwen3:32b`.
 
 ## How To Run
+
+Install Ollama from:
+
+```text
+https://ollama.com
+```
+
+Pull the default AMADEUS model:
+
+```bash
+ollama pull qwen3:32b
+```
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Run the app:
 
 ```bash
 python main.py
 ```
 
-## Module Rule
+If Windows does not recognize `python`, try:
 
-Core must not import module internals. Future modules will connect through:
+```bash
+py -3 main.py
+```
 
-- `module_manifest.json`
-- `public_api.py`
-- a module entry object
+## Current Scope
+
+This version includes a simple local Ollama LLM connection. It does not include real reasoning, memory, skills, mind map, storage, advanced permissions, streaming responses, or model picker UI yet.

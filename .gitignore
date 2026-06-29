@@ -11,11 +11,7 @@ env/
 *.swp
 *.swo
 
-data/logs/*
-!data/logs/.gitkeep
-data/runtime/*
-!data/runtime/.gitkeep
-
+*.log
 *.tmp
 *.temp
 .DS_Store
