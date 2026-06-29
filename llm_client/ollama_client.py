@@ -19,7 +19,7 @@ class OllamaClient:
         self,
         model: str = DEFAULT_OLLAMA_MODEL,
         host: str = DEFAULT_OLLAMA_HOST,
-        timeout_seconds: int = 180,
+        timeout_seconds: int = 600,
     ) -> None:
         # Keep Ollama settings centralized so future model selection is easy to add.
         self.model = model
