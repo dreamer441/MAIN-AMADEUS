@@ -6,13 +6,15 @@ This first rebuild is intentionally small. It creates a working shell with:
 
 - AMADEUS Core
 - AMADEUS Chat module
+- AMADEUS Identity module
+- AMADEUS Process Monitor / Trace module
 - AMADEUS PyQt6 GUI
 - Ollama local LLM client
 - Placeholder folders for future modules
 
 ## Current Behavior
 
-The app opens a desktop window. You can type a message, press Send or Enter, and AMADEUS routes it through Core to the Chat module.
+The app opens a desktop window. You can type a message, press Send or Enter, and AMADEUS routes it through Core to the Chat module. The Process Monitor panel shows real execution events from the latest request, such as input received, annotation check, routing decision, LLM call status, errors, and output ready.
 
 Chat now uses the local Ollama LLM client. The default lightweight model is `llama3.2:latest`.
 
@@ -52,7 +54,7 @@ py -3 main.py
 
 ## Current Scope
 
-This version includes a simple local Ollama LLM connection and read-only `[file]` annotations. It does not include real reasoning, memory, skills, mind map, storage, advanced permissions, streaming responses, or model picker UI yet.
+This version includes a simple local Ollama LLM connection, the AMADEUS Identity Module, the AMADEUS Process Monitor, read-only `[identity]` annotations, and read-only `[file]` annotations. It does not include real reasoning, memory, skills, mind map, storage, advanced permissions, streaming responses, or model picker UI yet.
 
 ## Annotations
 
@@ -61,11 +63,38 @@ Annotations are structured commands that start a message with brackets.
 ```text
 [file]
 [file][amadeus_core]
+[identity]
+[identity][charter]
 ```
 
 `[file]` lists available module folders. `[file][module_name]` reads that module's documentation files in a controlled, read-only way.
 
-AMADEUS can also use the same read-only project context during normal chat when you ask about project files, modules, README files, or structure.
+`[identity]` shows the active Identity Module status. `[identity][charter]` shows the full AMADEUS Identity Charter. `[identity][prompt]` and `[identity][project]` show the prompts Core can inject into Chat.
+
+AMADEUS can also use the same read-only project context during normal chat when you ask about project files, modules, README files, or structure. Identity context is injected into every normal chat message.
+
+## Process Monitor
+
+The Process Monitor shows real execution events from code. It is not hidden thinking and must not be used to invent private reasoning.
+
+Current trace examples include:
+
+```text
+[Input Received]
+Message received from GUI.
+
+[Annotation Check]
+Checking if message starts with a registered annotation pattern.
+
+[Routing Decision]
+No annotation detected. Routing to chat module.
+
+[LLM Client]
+Sending message to the configured Ollama model.
+
+[Output Ready]
+Response returned to GUI.
+```
 
 ## Chat Persistence
 

@@ -1,5 +1,6 @@
 from PyQt6.QtCore import QObject, QThread, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
+    QComboBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -16,7 +17,7 @@ from amadeus_core import AmadeusCore
 class ChatResponseWorker(QObject):
     """Runs a Core chat request away from the GUI thread."""
 
-    finished = pyqtSignal(str)
+    finished = pyqtSignal(object)
 
     def __init__(self, core: AmadeusCore, message: str) -> None:
         super().__init__()
@@ -24,13 +25,21 @@ class ChatResponseWorker(QObject):
         self.message = message
 
     def run(self) -> None:
-        """Call Core and emit a response that the GUI can display safely."""
+        """Call Core and emit a response payload that the GUI can display safely."""
         try:
-            response = self.core.handle_user_message(self.message)
+            result = self.core.handle_user_message(self.message)
+            if isinstance(result, str):
+                # Backward safety if Core temporarily returns the older string shape.
+                result = {"response": result, "trace": "Process Monitor did not receive trace data."}
         except Exception as error:
-            response = f"AMADEUS error: {error}"
+            result = {
+                "response": f"AMADEUS error: {error}",
+                "trace": f"[Error]\nGUI worker caught an error while calling Core: {error}",
+                "trace_detailed": f"[Error]\nGUI worker caught an error while calling Core: {error}",
+                "trace_events": [],
+            }
 
-        self.finished.emit(response)
+        self.finished.emit(result)
 
 
 class AmadeusMainWindow(QMainWindow):
@@ -41,15 +50,18 @@ class AmadeusMainWindow(QMainWindow):
         self.core = core
         self._active_threads: list[QThread] = []
         self._active_workers: list[ChatResponseWorker] = []
+        self._latest_trace_text = "Process Monitor will show the latest message trace here."
+        self._latest_trace_detailed = self._latest_trace_text
+        self._latest_trace_events: list[dict[str, str]] = []
 
         self.setWindowTitle("AMADEUS")
-        self.resize(800, 600)
+        self.resize(1100, 650)
 
         self._build_ui()
         self._load_existing_chat_history()
 
     def _build_ui(self) -> None:
-        """Create the chat history, input box, and send button."""
+        """Create chat controls and the Process Monitor panel."""
         root = QWidget()
         layout = QVBoxLayout(root)
 
@@ -57,9 +69,42 @@ class AmadeusMainWindow(QMainWindow):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("font-size: 24px; font-weight: bold; padding: 8px;")
 
+        main_row = QHBoxLayout()
+
+        chat_column = QVBoxLayout()
         self.chat_history = QTextEdit()
         self.chat_history.setReadOnly(True)
         self.chat_history.setPlaceholderText("Conversation will appear here.")
+        chat_column.addWidget(self.chat_history)
+
+        monitor_column = QVBoxLayout()
+        monitor_header = QHBoxLayout()
+        monitor_title = QLabel("AMADEUS Process Monitor")
+        monitor_title.setStyleSheet("font-size: 16px; font-weight: bold;")
+
+        self.trace_mode_selector = QComboBox()
+        self.trace_mode_selector.addItems(["Compact", "Detailed"])
+        self.trace_mode_selector.currentTextChanged.connect(self._render_latest_trace)
+
+        monitor_header.addWidget(monitor_title)
+        monitor_header.addStretch()
+        monitor_header.addWidget(self.trace_mode_selector)
+
+        self.process_monitor = QTextEdit()
+        self.process_monitor.setReadOnly(True)
+        self.process_monitor.setPlaceholderText("Execution trace for the latest message will appear here.")
+        self.process_monitor.setPlainText(self._latest_trace_text)
+
+        monitor_note = QLabel("Shows real execution events only, not hidden thoughts.")
+        monitor_note.setStyleSheet("color: #666; padding: 2px;")
+
+        monitor_column.addLayout(monitor_header)
+        monitor_column.addWidget(self.process_monitor)
+        monitor_column.addWidget(monitor_note)
+
+        # The chat remains primary, while the monitor stays visible for debugging routing and modules.
+        main_row.addLayout(chat_column, stretch=3)
+        main_row.addLayout(monitor_column, stretch=2)
 
         input_row = QHBoxLayout()
         self.message_input = QLineEdit()
@@ -76,7 +121,7 @@ class AmadeusMainWindow(QMainWindow):
         input_row.addWidget(self.send_button)
 
         layout.addWidget(title)
-        layout.addWidget(self.chat_history)
+        layout.addLayout(main_row)
         layout.addWidget(self.status_label)
         layout.addLayout(input_row)
 
@@ -91,6 +136,7 @@ class AmadeusMainWindow(QMainWindow):
         self.message_input.clear()
         self._append_message("User", message)
         self._set_waiting_for_response(True)
+        self.process_monitor.setPlainText("[Input Sent]\nWaiting for Core trace...")
 
         # GUI talks to Core only. Core decides which module handles the message.
         self._start_response_worker(message)
@@ -112,10 +158,45 @@ class AmadeusMainWindow(QMainWindow):
         self._active_workers.append(worker)
         thread.start()
 
-    def _handle_response(self, response: str) -> None:
-        """Display the finished AMADEUS response and re-enable input."""
+    def _handle_response(self, result: object) -> None:
+        """Display the finished AMADEUS response and latest Process Monitor trace."""
+        response = "AMADEUS returned an unreadable response."
+        trace = "Process Monitor did not receive trace data."
+        trace_detailed = trace
+        trace_events: list[dict[str, str]] = []
+
+        if isinstance(result, dict):
+            raw_response = result.get("response")
+            raw_trace = result.get("trace")
+            raw_trace_detailed = result.get("trace_detailed")
+            raw_trace_events = result.get("trace_events")
+
+            if isinstance(raw_response, str):
+                response = raw_response
+            if isinstance(raw_trace, str):
+                trace = raw_trace
+            if isinstance(raw_trace_detailed, str):
+                trace_detailed = raw_trace_detailed
+            if isinstance(raw_trace_events, list):
+                trace_events = [event for event in raw_trace_events if isinstance(event, dict)]
+        elif isinstance(result, str):
+            response = result
+
+        self._latest_trace_text = trace
+        self._latest_trace_detailed = trace_detailed
+        self._latest_trace_events = trace_events
+
         self._append_message("AMADEUS", response)
+        self._render_latest_trace()
         self._set_waiting_for_response(False)
+
+    def _render_latest_trace(self) -> None:
+        """Render the latest trace in the selected monitor mode."""
+        mode = self.trace_mode_selector.currentText().lower() if hasattr(self, "trace_mode_selector") else "compact"
+        if mode == "detailed":
+            self.process_monitor.setPlainText(self._latest_trace_detailed)
+        else:
+            self.process_monitor.setPlainText(self._latest_trace_text)
 
     def _set_waiting_for_response(self, waiting: bool) -> None:
         """Toggle input controls while AMADEUS is generating a response."""
