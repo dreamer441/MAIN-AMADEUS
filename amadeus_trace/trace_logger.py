@@ -1,3 +1,10 @@
+"""Safe façade for recording Process Monitor events.
+
+Core and modules should use TraceLogger instead of touching TraceSession directly.
+The logger intentionally swallows trace failures because diagnostics must never stop
+AMADEUS from answering.
+"""
+
 from amadeus_trace.trace_session import TraceSession
 
 
@@ -9,6 +16,8 @@ class TraceLogger:
 
     def start_session(self) -> TraceSession:
         """Create a fresh trace session for the latest user message."""
+        # A new session per message makes the right-side Process Monitor readable.
+        # Later persistent logs can be added separately without changing this live view behavior.
         self.current_session = TraceSession()
         return self.current_session
 

@@ -1,3 +1,10 @@
+"""Simple registry for AMADEUS module entry points.
+
+The registry helps Core call modules by name without mixing every module's internal
+implementation into Core itself.
+"""
+
+
 class ModuleRegistry:
     """Stores module objects by name so Core can route without owning module logic."""
 

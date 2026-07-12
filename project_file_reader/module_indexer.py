@@ -1,3 +1,10 @@
+"""Top-level module discovery for AMADEUS.
+
+The indexer deliberately looks only at documented top-level folders. This gives
+AMADEUS a safe way to know which modules exist without crawling the whole project
+or reading code automatically.
+"""
+
 import re
 from pathlib import Path
 
@@ -69,6 +76,7 @@ class ModuleIndexer:
             return False
 
         # A folder is considered a module only when it owns the required module docs.
+        # This enforces Dato's rule: module docs are not optional tracking files.
         return all((path / doc_name).is_file() for doc_name in REQUIRED_MODULE_DOCS)
 
     def _similarity_score(self, requested: str, module_name: str) -> int:

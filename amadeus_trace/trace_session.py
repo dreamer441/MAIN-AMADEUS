@@ -1,3 +1,10 @@
+"""Per-message trace session for AMADEUS.
+
+One TraceSession equals one user request. Keeping sessions small and temporary makes
+the Process Monitor easy to understand: it shows what happened for the latest message,
+not an endless mixed log from old conversations.
+"""
+
 from dataclasses import dataclass, field
 from uuid import uuid4
 
@@ -24,6 +31,7 @@ class TraceSession:
         level: str = "info",
     ) -> TraceEvent:
         """Record one real execution event and return it for optional caller use."""
+        # Event creation normalizes bad category/level values, so callers can stay simple.
         event = TraceEvent(category=category, title=title, message=message, level=level)
         self.events.append(event)
         return event
@@ -41,4 +49,6 @@ class TraceSession:
 
     def to_list(self) -> list[dict[str, str]]:
         """Return structured events for future GUI filters, exports, or debug tools."""
+        # Keep this structured representation even while the GUI mostly shows plain text.
+        # It will matter later for filters like category=llm or level=error.
         return [event.to_dict() for event in self.events]

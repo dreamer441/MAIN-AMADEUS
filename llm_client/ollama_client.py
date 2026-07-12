@@ -1,3 +1,9 @@
+"""Local Ollama HTTP client for AMADEUS.
+
+This module is the only current place that talks to Ollama directly. Other modules
+should call the LLM Client boundary so future model routing stays replaceable.
+"""
+
 import json
 import urllib.error
 import urllib.request
@@ -38,6 +44,7 @@ class OllamaClient:
             },
         }
         if system_prompt:
+            # Ollama supports a separate system field. We use it for stable AMADEUS rules/identity.
             payload["system"] = system_prompt
 
         data = self._post_json("/api/generate", payload)

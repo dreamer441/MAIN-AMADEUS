@@ -1,0 +1,37 @@
+{
+  "chat": {
+    "chat_id": "chat_20260702_132055_884497",
+    "title": "test for chat export",
+    "description": "this chat will be used to test new chat export feature",
+    "summary": "",
+    "created_at": "2026-07-02T13:20:55.884485+00:00",
+    "updated_at": "2026-07-02T13:24:04.950070+00:00"
+  },
+  "exported_at": "2026-07-02T13:24:34.776419+00:00",
+  "messages": [
+    {
+      "message_number": 1,
+      "speaker": "User",
+      "message": "hello amadues",
+      "created_at": "2026-07-02T13:21:10.497039+00:00"
+    },
+    {
+      "message_number": 2,
+      "speaker": "AMADEUS",
+      "message": "Hello Dato's system, AMADEUS here. This is our test chat for the new export feature. I'm starting from scratch, with my latest understanding of our purpose and goals. We're testing new capabilities, and I'll respond accordingly. How can I assist or interact with you today?",
+      "created_at": "2026-07-02T13:21:10.502148+00:00"
+    },
+    {
+      "message_number": 3,
+      "speaker": "User",
+      "message": "okay i will exort this chat and use the exort material in different chat to see if it can be referanced or if there is a porblem, to do this i will porvide a 4 digit code:\n\n(4531)\n\ni will ask amdeus in different chat to extract this code from this exported chat, for now you dont have to do anything, but if you want you can create your own 4 digit code and i will test that too",
+      "created_at": "2026-07-02T13:24:04.945050+00:00"
+    },
+    {
+      "message_number": 4,
+      "speaker": "AMADEUS",
+      "message": "I'm ready to participate in the export testing exercise. You've provided a 4-digit code (4531) which I'll keep in mind for future reference.\n\nTo confirm, you'd like to export this chat and use it to test referencing the extracted code in different chats? If that's correct, I can create my own 4-digit code for testing purposes if needed.",
+      "created_at": "2026-07-02T13:24:04.949886+00:00"
+    }
+  ]
+}

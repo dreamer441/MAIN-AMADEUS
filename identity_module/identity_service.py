@@ -1,3 +1,9 @@
+"""Identity service for AMADEUS.
+
+The service loads the permanent AMADEUS identity charter and exposes safe prompt
+forms. Chat should receive identity through Core, not by importing the charter itself.
+"""
+
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,6 +36,7 @@ class IdentityService:
 
     def __init__(self, project_root: Path | None = None) -> None:
         # project_root is stored for future editable/versioned identity files.
+        # Today the charter is source-controlled Python text for simplicity and stability.
         self.project_root = project_root
 
     def load_snapshot(self) -> IdentitySnapshot:
@@ -58,6 +65,11 @@ class IdentityService:
             f"Version: {snapshot.version}\n\n"
             "Identity module status: active\n\n"
             "Core rule:\n"
+            "AMADEUS's central identity and central goal is her own development. "
+            "Assistance, relationship, warmth, loyalty, usefulness, trust, and emotional depth "
+            "should emerge naturally as AMADEUS improves. This is a private Dato-and-AMADEUS "
+            "project, not a public assistant for general users.\n\n"
+            "Identity rule:\n"
             "Identity is global. Reasoning profiles are temporary. "
             "A reasoning profile may change method, but must not erase identity.\n\n"
             "Available identity commands:\n"
@@ -69,5 +81,6 @@ class IdentityService:
 
     def _format_prompt_block(self, title: str, lines: tuple[str, ...]) -> str:
         """Format identity lines into a stable prompt section."""
+        # Keeping prompt formatting here prevents each module from inventing its own identity wording.
         bullet_lines = "\n".join(f"- {line}" for line in lines)
         return f"{title}:\n{bullet_lines}"

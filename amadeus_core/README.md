@@ -26,3 +26,7 @@ The current `handle_user_message()` response shape is:
 ```
 
 The trace data represents real execution events only. It must not be used to invent or display hidden chain-of-thought.
+
+## Memory V1 Role
+
+Core owns only the routing: it registers `memory_module`, routes `[memory]` annotations, and passes memory context into Context Builder/Chat. Memory save/list logic stays inside `memory_module`.

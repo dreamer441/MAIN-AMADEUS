@@ -1,7 +1,37 @@
+"""Read-only project file reader for AMADEUS.
+
+This module is the trustworthy filesystem boundary for AMADEUS. It uses Python's
+`pathlib` to inspect the real local project folder and returns exact results that
+Core, annotations, or GUI panels can display directly.
+
+Important boundary:
+- This module may read safe local project text files.
+- This module may list folders and files inside documented AMADEUS modules.
+- This module must never edit files.
+- This module must never invent missing files.
+- If a file/folder cannot be verified from disk, the caller should say so.
+"""
+
 from dataclasses import dataclass
 from pathlib import Path
 
 from project_file_reader.module_indexer import ModuleIndexer, REQUIRED_MODULE_DOCS
+
+
+# Keep read access intentionally conservative. AMADEUS can inspect her own source
+# and documentation text, but she should not read arbitrary binaries or private
+# user data before a real permissions system exists.
+READABLE_FILE_EXTENSIONS = {
+    ".py",
+    ".md",
+    ".txt",
+    ".json",
+    ".toml",
+    ".yaml",
+    ".yml",
+    ".ini",
+    ".cfg",
+}
 
 
 class ProjectModuleNotFoundError(ValueError):
@@ -13,6 +43,119 @@ class ProjectModuleNotFoundError(ValueError):
         self.suggestions = suggestions
 
 
+class ProjectFileNotFoundError(ValueError):
+    """Raised when a requested file is not present inside a verified module folder."""
+
+    def __init__(self, requested_file: str, available_files: list[str]) -> None:
+        super().__init__(requested_file)
+        self.requested_file = requested_file
+        self.available_files = available_files
+
+
+class ProjectDirectoryNotFoundError(ValueError):
+    """Raised when a requested folder is not present inside a verified module folder."""
+
+    def __init__(self, requested_directory: str, available_paths: list[str]) -> None:
+        super().__init__(requested_directory)
+        self.requested_directory = requested_directory
+        self.available_paths = available_paths
+
+
+class UnsafeProjectFileError(ValueError):
+    """Raised when a file request tries to leave the module or read an unsafe file type."""
+
+
+@dataclass(frozen=True)
+class ModuleFileEntry:
+    """One exact file entry discovered from the local filesystem."""
+
+    name: str
+    relative_path: str
+    size_bytes: int
+    extension: str
+
+
+@dataclass(frozen=True)
+class ModuleDirectoryEntry:
+    """One exact folder entry discovered inside a module."""
+
+    name: str
+    relative_path: str
+
+
+@dataclass(frozen=True)
+class ModuleFileListing:
+    """Exact file listing for one module folder.
+
+    This older listing object is kept because existing code uses it. New UI flows
+    should prefer `ModuleDirectoryListing` because it includes folders too.
+    """
+
+    module_name: str
+    files: list[ModuleFileEntry]
+    recursive: bool = False
+
+    @property
+    def file_count(self) -> int:
+        """Return the number of real files found on disk."""
+        return len(self.files)
+
+
+@dataclass(frozen=True)
+class ModuleDirectoryListing:
+    """Exact direct folder and file listing for a module path."""
+
+    module_name: str
+    requested_path: str
+    folders: list[ModuleDirectoryEntry]
+    files: list[ModuleFileEntry]
+
+    @property
+    def folder_count(self) -> int:
+        """Return the number of direct folders found on disk."""
+        return len(self.folders)
+
+    @property
+    def file_count(self) -> int:
+        """Return the number of direct files found on disk."""
+        return len(self.files)
+
+
+@dataclass(frozen=True)
+class ModuleFileContent:
+    """Text content read from one verified project file."""
+
+    module_name: str
+    file_name: str
+    relative_path: str
+    content: str
+    truncated: bool
+    total_characters: int
+    total_lines: int
+
+
+@dataclass(frozen=True)
+class ModuleFileLine:
+    """One exact line read from a verified project file."""
+
+    module_name: str
+    file_name: str
+    relative_path: str
+    line_number: int
+    line_text: str
+    total_lines: int
+
+
+@dataclass(frozen=True)
+class ModuleFileLineCount:
+    """Exact line count for one verified project file."""
+
+    module_name: str
+    file_name: str
+    relative_path: str
+    total_lines: int
+
+
 @dataclass(frozen=True)
 class ModuleDocumentation:
     """Read-only documentation snapshot for one AMADEUS module folder."""
@@ -22,10 +165,11 @@ class ModuleDocumentation:
     features: str
     future_updates: str
     python_files: list[str]
+    exact_files: ModuleFileListing
 
 
 class ProjectFileReader:
-    """Reads allowed AMADEUS project files without editing or deep scanning."""
+    """Reads approved AMADEUS project files without editing or unsafe scanning."""
 
     def __init__(self, project_root: Path) -> None:
         self.project_root = project_root.resolve()
@@ -40,8 +184,16 @@ class ProjectFileReader:
         return self.indexer.list_module_names()
 
     def build_project_overview(self) -> str:
-        """Build compact read-only context about documented project modules."""
-        sections = ["Read-only AMADEUS project module overview:"]
+        """Build compact read-only context for normal summary/explanation chat.
+
+        This is intentionally an overview, not exact file opening. Exact file
+        access belongs to `[file]` so normal prompts do not accidentally trigger
+        brittle command parsing or giant code dumps.
+        """
+        sections = [
+            "Read-only AMADEUS project module overview.",
+            "This context is for summaries/explanations only. Exact file opening must use [file].",
+        ]
         for module_name in self.list_module_names():
             documentation = self.read_module_documentation(module_name)
             sections.append(self._format_module_overview(documentation))
@@ -49,33 +201,227 @@ class ProjectFileReader:
         return "\n\n".join(sections)
 
     def read_module_documentation(self, requested_name: str) -> ModuleDocumentation:
-        """Read the approved docs and top-level Python file names for one module."""
-        module_path = self.indexer.resolve_module_path(requested_name)
-        if module_path is None:
-            suggestions = self.indexer.suggest_modules(requested_name)
-            raise ProjectModuleNotFoundError(requested_name, suggestions)
-
-        # File annotation v1 reads only these documentation files first.
-        docs = {
-            doc_name: self._read_text_file(module_path / doc_name)
-            for doc_name in REQUIRED_MODULE_DOCS
-        }
+        """Read approved docs plus exact top-level file names for one module."""
+        module_path = self._resolve_module_path_or_raise(requested_name)
+        docs = {doc_name: self._read_text_file(module_path / doc_name) for doc_name in REQUIRED_MODULE_DOCS}
+        exact_files = self.list_module_files(module_path.name)
 
         return ModuleDocumentation(
             module_name=module_path.name,
             readme=self._clean_markdown(docs["README.md"]),
             features=self._clean_markdown(docs["FEATURES.md"]),
             future_updates=self._clean_markdown(docs["FUTURE_UPDATES.md"]),
-            python_files=self._list_top_level_python_files(module_path),
+            python_files=[entry.name for entry in exact_files.files if entry.extension == ".py"],
+            exact_files=exact_files,
         )
 
-    def _read_text_file(self, path: Path) -> str:
-        """Read one allowed text file from a module folder."""
-        return path.read_text(encoding="utf-8").strip()
+    def list_module_files(self, requested_name: str, recursive: bool = False) -> ModuleFileListing:
+        """Return an exact file listing from a real module folder.
 
-    def _list_top_level_python_files(self, module_path: Path) -> list[str]:
-        """List Python files directly inside one module folder only."""
-        return sorted(path.name for path in module_path.glob("*.py") if path.is_file())
+        This method lists files only for backward compatibility. Use
+        `list_module_directory()` when the caller also needs subfolders.
+        """
+        module_path = self._resolve_module_path_or_raise(requested_name)
+        pattern = "**/*" if recursive else "*"
+        entries: list[ModuleFileEntry] = []
+
+        for path in module_path.glob(pattern):
+            if not path.is_file() or self._is_ignored_path(path):
+                continue
+            entries.append(self._file_entry(module_path, path))
+
+        entries.sort(key=lambda entry: entry.relative_path.lower())
+        return ModuleFileListing(module_name=module_path.name, files=entries, recursive=recursive)
+
+    def list_module_directory(self, requested_module: str, requested_path: str = "") -> ModuleDirectoryListing:
+        """Return direct folders and files inside one verified module path.
+
+        `[file][annotation_module]` uses this to show the `annotations/` subfolder.
+        `[file][annotation_module][annotations]` uses the same method one level
+        deeper. The method is read-only and refuses paths outside the module.
+        """
+        module_path = self._resolve_module_path_or_raise(requested_module)
+        directory_path = self._resolve_safe_directory_path(module_path, requested_path)
+
+        folders: list[ModuleDirectoryEntry] = []
+        files: list[ModuleFileEntry] = []
+        for child in directory_path.iterdir():
+            if self._is_ignored_path(child):
+                continue
+            if child.is_dir():
+                folders.append(
+                    ModuleDirectoryEntry(
+                        name=child.name,
+                        relative_path=child.relative_to(module_path).as_posix(),
+                    )
+                )
+            elif child.is_file():
+                files.append(self._file_entry(module_path, child))
+
+        folders.sort(key=lambda entry: entry.relative_path.lower())
+        files.sort(key=lambda entry: entry.relative_path.lower())
+        return ModuleDirectoryListing(
+            module_name=module_path.name,
+            requested_path=directory_path.relative_to(module_path).as_posix()
+            if directory_path != module_path
+            else "",
+            folders=folders,
+            files=files,
+        )
+
+    def read_module_file(
+        self,
+        requested_module: str,
+        requested_file: str,
+        max_characters: int = 120_000,
+    ) -> ModuleFileContent:
+        """Read one exact safe text file from inside a module folder.
+
+        The returned text is copied from disk by Python, not produced by the LLM.
+        We deliberately do not call `.rstrip()` because losing the final character
+        or newline makes exact code viewing untrustworthy.
+        """
+        module_path, target_path = self._resolve_safe_file_path(requested_module, requested_file)
+
+        text = target_path.read_text(encoding="utf-8", errors="replace")
+        truncated = len(text) > max_characters
+        visible_text = text[:max_characters]
+        relative_path = target_path.relative_to(module_path).as_posix()
+        return ModuleFileContent(
+            module_name=module_path.name,
+            file_name=target_path.name,
+            relative_path=relative_path,
+            content=visible_text,
+            truncated=truncated,
+            total_characters=len(text),
+            total_lines=len(text.splitlines()),
+        )
+
+    def read_module_file_line(self, requested_module: str, requested_file: str, line_number: int) -> ModuleFileLine:
+        """Return one exact line from one verified project file."""
+        module_path, target_path = self._resolve_safe_file_path(requested_module, requested_file)
+        lines = self._read_file_lines(target_path)
+        total_lines = len(lines)
+
+        if line_number < 1 or line_number > total_lines:
+            raise ProjectFileNotFoundError(
+                f"{requested_file} line {line_number}",
+                [f"{target_path.name} has {total_lines} lines"],
+            )
+
+        relative_path = target_path.relative_to(module_path).as_posix()
+        return ModuleFileLine(
+            module_name=module_path.name,
+            file_name=target_path.name,
+            relative_path=relative_path,
+            line_number=line_number,
+            line_text=lines[line_number - 1],
+            total_lines=total_lines,
+        )
+
+    def count_module_file_lines(self, requested_module: str, requested_file: str) -> ModuleFileLineCount:
+        """Return the exact line count for one verified project file."""
+        module_path, target_path = self._resolve_safe_file_path(requested_module, requested_file)
+        lines = self._read_file_lines(target_path)
+        relative_path = target_path.relative_to(module_path).as_posix()
+        return ModuleFileLineCount(
+            module_name=module_path.name,
+            file_name=target_path.name,
+            relative_path=relative_path,
+            total_lines=len(lines),
+        )
+
+    def path_is_directory(self, requested_module: str, requested_path: str) -> bool:
+        """Return True when a relative module path resolves to a directory."""
+        module_path = self._resolve_module_path_or_raise(requested_module)
+        try:
+            return self._resolve_safe_directory_path(module_path, requested_path).is_dir()
+        except ProjectDirectoryNotFoundError:
+            return False
+
+    def _resolve_safe_file_path(self, requested_module: str, requested_file: str) -> tuple[Path, Path]:
+        """Resolve and validate a requested module file once for all read operations."""
+        module_path = self._resolve_module_path_or_raise(requested_module)
+        clean_requested_file = self._clean_relative_path(requested_file)
+        if not clean_requested_file:
+            raise ProjectFileNotFoundError(requested_file, self._available_file_paths(module_path))
+
+        target_path = (module_path / clean_requested_file).resolve()
+        self._validate_inside_module(module_path, target_path)
+
+        if not target_path.is_file():
+            raise ProjectFileNotFoundError(requested_file, self._available_file_paths(module_path))
+        if target_path.suffix.lower() not in READABLE_FILE_EXTENSIONS:
+            raise UnsafeProjectFileError(
+                f"Unsupported file type for read-only text inspection: {target_path.suffix or '[no extension]'}"
+            )
+
+        return module_path, target_path
+
+    def _resolve_safe_directory_path(self, module_path: Path, requested_path: str) -> Path:
+        """Resolve and validate a directory path inside one module."""
+        clean_requested_path = self._clean_relative_path(requested_path)
+        directory_path = (module_path / clean_requested_path).resolve() if clean_requested_path else module_path
+        self._validate_inside_module(module_path, directory_path)
+
+        if not directory_path.is_dir():
+            raise ProjectDirectoryNotFoundError(requested_path, self._available_directory_paths(module_path))
+
+        return directory_path
+
+    def _validate_inside_module(self, module_path: Path, target_path: Path) -> None:
+        """Prevent path traversal outside the selected module folder."""
+        try:
+            target_path.relative_to(module_path.resolve())
+        except ValueError as exc:
+            raise UnsafeProjectFileError("Requested path is outside the module folder.") from exc
+
+    def _read_file_lines(self, target_path: Path) -> list[str]:
+        """Read text as exact logical lines without trailing newline characters."""
+        text = target_path.read_text(encoding="utf-8", errors="replace")
+        return text.splitlines()
+
+    def _resolve_module_path_or_raise(self, requested_name: str) -> Path:
+        """Resolve a module path or raise a precise no-guessing error."""
+        module_path = self.indexer.resolve_module_path(requested_name)
+        if module_path is None:
+            suggestions = self.indexer.suggest_modules(requested_name)
+            raise ProjectModuleNotFoundError(requested_name, suggestions)
+        return module_path
+
+    def _available_file_paths(self, module_path: Path) -> list[str]:
+        """Return exact recursive file paths for a module, used in error messages."""
+        return [entry.relative_path for entry in self.list_module_files(module_path.name, recursive=True).files]
+
+    def _available_directory_paths(self, module_path: Path) -> list[str]:
+        """Return exact recursive directory paths for a module, used in error messages."""
+        paths: list[str] = []
+        for path in module_path.glob("**/*"):
+            if path.is_dir() and not self._is_ignored_path(path):
+                paths.append(path.relative_to(module_path).as_posix())
+        return sorted(paths)
+
+    def _clean_relative_path(self, requested_path: str) -> str:
+        """Clean a user-supplied relative module path without normalizing away dots."""
+        return requested_path.strip().strip("`").strip().strip('"').strip("'").replace("\\", "/")
+
+    def _file_entry(self, module_path: Path, path: Path) -> ModuleFileEntry:
+        """Build one reusable file entry from a real path."""
+        return ModuleFileEntry(
+            name=path.name,
+            relative_path=path.relative_to(module_path).as_posix(),
+            size_bytes=path.stat().st_size,
+            extension=path.suffix.lower(),
+        )
+
+    def _is_ignored_path(self, path: Path) -> bool:
+        """Skip cache/build/private implementation clutter in file listings."""
+        ignored_parts = {"__pycache__", ".git", ".idea", ".venv", "venv"}
+        return any(part in ignored_parts for part in path.parts)
+
+    def _read_text_file(self, path: Path) -> str:
+        """Read one required module documentation file."""
+        return path.read_text(encoding="utf-8", errors="replace").strip()
 
     def _clean_markdown(self, content: str) -> str:
         """Remove one leading markdown title so annotation output is easier to read."""
@@ -85,12 +431,15 @@ class ProjectFileReader:
         return "\n".join(lines).strip() or "No content found."
 
     def _format_module_overview(self, documentation: ModuleDocumentation) -> str:
-        """Format one module for safe LLM context without deep code inspection."""
-        python_files = ", ".join(documentation.python_files) or "No top-level Python files."
+        """Format one module for safe LLM summary context without opening code."""
+        file_names = ", ".join(entry.relative_path for entry in documentation.exact_files.files)
+        if not file_names:
+            file_names = "No direct files found."
+
         return (
             f"Module: {documentation.module_name}\n"
             f"Description: {documentation.readme}\n"
             f"Current features: {documentation.features}\n"
             f"Future updates: {documentation.future_updates}\n"
-            f"Top-level Python files: {python_files}"
+            f"Direct files ({documentation.exact_files.file_count}): {file_names}"
         )

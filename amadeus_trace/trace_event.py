@@ -1,3 +1,10 @@
+"""Trace event model for the AMADEUS Process Monitor.
+
+A TraceEvent is not a thought. It is a real execution marker created by code while
+AMADEUS handles a user request. This boundary matters: the monitor helps debug the
+system pipeline, but it must never pretend to reveal private reasoning.
+"""
+
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -33,6 +40,8 @@ class TraceEvent:
         clean_title = self.title.strip()
         clean_message = self.message.strip()
 
+        # Unknown categories/levels are softened instead of rejected so a bad trace call
+        # does not break the actual AMADEUS response path.
         if clean_category not in VALID_TRACE_CATEGORIES:
             clean_category = "system"
         if clean_level not in VALID_TRACE_LEVELS:
@@ -42,6 +51,7 @@ class TraceEvent:
         if not clean_message:
             clean_message = "No details provided."
 
+        # The dataclass is frozen so outside code cannot accidentally mutate old trace events.
         object.__setattr__(self, "category", clean_category)
         object.__setattr__(self, "level", clean_level)
         object.__setattr__(self, "title", clean_title)

@@ -1,0 +1,581 @@
+"""Reusable PyQt widget for AMADEUS's right-side workspace panel.
+
+`main_window.py` should coordinate the whole window, not own every side-panel
+screen. This widget contains the current tabs and rendering logic while
+`side_panel` provides the payload/state model underneath it.
+"""
+
+from __future__ import annotations
+
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtGui import QFont, QTextCursor
+from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTabWidget, QTextEdit, QVBoxLayout, QWidget
+
+from side_panel import SidePanelPayload, SidePanelState
+
+
+class RightPanelWidget(QTabWidget):
+    """Tabbed workspace panel displayed on the right side of AMADEUS.
+
+    The widget knows how to *display* traces, code, memory, sheets, and materials.
+    It does not know how to produce them. Core and modules send payloads; this
+    widget renders them and keeps enough visible state for future `[panel]`
+    context injection.
+    """
+
+    sheet_save_requested = pyqtSignal(object)
+    sheet_delete_requested = pyqtSignal(str)
+    side_ask_requested = pyqtSignal(str, str)
+    side_ask_save_requested = pyqtSignal()
+    side_ask_new_chat_requested = pyqtSignal()
+
+    PROCESS_TAB_INDEX = 0
+    CODE_TAB_INDEX = 1
+    MEMORY_TAB_INDEX = 2
+    SHEETS_TAB_INDEX = 3
+    MATERIALS_TAB_INDEX = 4
+    SIDE_ASK_TAB_INDEX = 5
+    COMMENTS_TAB_INDEX = 6
+
+    def __init__(self, initial_trace_text: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.state = SidePanelState(compact_trace=initial_trace_text, detailed_trace=initial_trace_text)
+        self._loading_sheets_panel = False
+        self._sheet_rows_by_id: dict[str, dict] = {}
+
+        self.addTab(self._build_process_monitor_tab(initial_trace_text), "Process Monitor")
+        self.addTab(self._build_code_viewer_tab(), "Code Viewer")
+        self.addTab(self._build_memory_tab(), "Memory")
+        self.addTab(self._build_sheets_tab(), "Sheets")
+        self.addTab(self._build_materials_tab(), "Materials")
+        self.addTab(self._build_side_ask_tab(), "Side Ask")
+        self.addTab(self._build_comments_tab(), "Comments")
+
+    def _build_process_monitor_tab(self, initial_trace_text: str) -> QWidget:
+        """Build the tab that displays real execution events for the latest request."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        header = QHBoxLayout()
+        monitor_title = QLabel("AMADEUS Process Monitor")
+        monitor_title.setStyleSheet("font-size: 16px; font-weight: bold;")
+
+        self.trace_mode_selector = QComboBox()
+        self.trace_mode_selector.addItems(["Compact", "Detailed"])
+        self.trace_mode_selector.currentTextChanged.connect(self.render_latest_trace)
+
+        header.addWidget(monitor_title)
+        header.addStretch()
+        header.addWidget(self.trace_mode_selector)
+
+        self.process_monitor = QTextEdit()
+        self.process_monitor.setReadOnly(True)
+        self.process_monitor.setPlaceholderText("Execution trace for the latest message will appear here.")
+        self.process_monitor.setPlainText(initial_trace_text)
+
+        monitor_note = QLabel("Shows real execution events only, not hidden thoughts.")
+        monitor_note.setStyleSheet("color: #666; padding: 2px;")
+
+        layout.addLayout(header)
+        layout.addWidget(self.process_monitor)
+        layout.addWidget(monitor_note)
+        return tab
+
+    def _build_code_viewer_tab(self) -> QWidget:
+        """Build a read-only code/file viewer for `[file]` annotation results."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        self.code_viewer_title = QLabel("No file opened")
+        self.code_viewer_title.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.code_viewer_meta = QLabel("Use [file][module][file.py] to open exact file content here.")
+        self.code_viewer_meta.setStyleSheet("color: #666; padding: 2px;")
+
+        self.code_viewer = QTextEdit()
+        self.code_viewer.setReadOnly(True)
+        self.code_viewer.setPlaceholderText("Exact file content opened by [file] will appear here.")
+        self.code_viewer.setFont(QFont("Consolas", 10))
+
+        layout.addWidget(self.code_viewer_title)
+        layout.addWidget(self.code_viewer_meta)
+        layout.addWidget(self.code_viewer)
+        return tab
+
+    def _build_memory_tab(self) -> QWidget:
+        """Build the read-only Memory panel for `[memory]` annotation results."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        self.memory_panel_title = QLabel("AMADEUS Memory")
+        self.memory_panel_title.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.memory_panel_meta = QLabel("Current chat context and explicit memory appear here.")
+        self.memory_panel_meta.setStyleSheet("color: #666; padding: 2px;")
+
+        self.memory_panel = QTextEdit()
+        self.memory_panel.setReadOnly(True)
+        self.memory_panel.setPlaceholderText("Current chat context and explicit AMADEUS memory will appear here.")
+
+        memory_note = QLabel("Memory shown here is explicit saved context, not hidden thoughts.")
+        memory_note.setStyleSheet("color: #666; padding: 2px;")
+
+        layout.addWidget(self.memory_panel_title)
+        layout.addWidget(self.memory_panel_meta)
+        layout.addWidget(self.memory_panel)
+        layout.addWidget(memory_note)
+        return tab
+
+    def _build_sheets_tab(self) -> QWidget:
+        """Build the editable Sheets panel.
+
+        Sheets are the first right-panel tab that can edit data. The widget emits
+        save/delete requests, but storage still belongs to `sheets_module` through
+        Core. This keeps the GUI from becoming the owner of project data.
+        """
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        header = QHBoxLayout()
+        self.sheets_title = QLabel("AMADEUS Sheets")
+        self.sheets_title.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.sheets_selector = QComboBox()
+        self.sheets_selector.currentIndexChanged.connect(self._load_selected_sheet_into_editor)
+        header.addWidget(self.sheets_title)
+        header.addStretch()
+        header.addWidget(QLabel("Sheet:"))
+        header.addWidget(self.sheets_selector)
+
+        self.sheets_meta = QLabel("Create a chat or global sheet, edit it here, then save.")
+        self.sheets_meta.setStyleSheet("color: #666; padding: 2px;")
+
+        self.sheet_id_label = QLabel("New sheet")
+        self.sheet_id_label.setStyleSheet("color: #777; padding: 2px;")
+
+        self.sheet_title_input = QLineEdit()
+        self.sheet_title_input.setPlaceholderText("Sheet title")
+
+        self.sheet_scope_selector = QComboBox()
+        self.sheet_scope_selector.addItems(["chat", "global"])
+
+        self.sheet_description_input = QTextEdit()
+        self.sheet_description_input.setPlaceholderText("Optional sheet description")
+        self.sheet_description_input.setMaximumHeight(70)
+
+        self.sheet_content_editor = QTextEdit()
+        self.sheet_content_editor.setPlaceholderText("Write sheet content here...")
+
+        button_row = QHBoxLayout()
+        self.new_sheet_button = QPushButton("New Sheet")
+        self.save_sheet_button = QPushButton("Save Sheet")
+        self.delete_sheet_button = QPushButton("Delete Sheet")
+        self.new_sheet_button.clicked.connect(self._prepare_new_sheet)
+        self.save_sheet_button.clicked.connect(self._emit_sheet_save_requested)
+        self.delete_sheet_button.clicked.connect(self._emit_sheet_delete_requested)
+        button_row.addWidget(self.new_sheet_button)
+        button_row.addWidget(self.save_sheet_button)
+        button_row.addWidget(self.delete_sheet_button)
+        button_row.addStretch()
+
+        layout.addLayout(header)
+        layout.addWidget(self.sheets_meta)
+        layout.addWidget(self.sheet_id_label)
+        layout.addWidget(QLabel("Title:"))
+        layout.addWidget(self.sheet_title_input)
+        layout.addWidget(QLabel("Scope:"))
+        layout.addWidget(self.sheet_scope_selector)
+        layout.addWidget(QLabel("Description:"))
+        layout.addWidget(self.sheet_description_input)
+        layout.addWidget(QLabel("Content:"))
+        layout.addWidget(self.sheet_content_editor)
+        layout.addLayout(button_row)
+        return tab
+
+    def _build_materials_tab(self) -> QWidget:
+        """Build the read-only Materials panel foundation."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        self.materials_title = QLabel("AMADEUS Materials")
+        self.materials_title.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.materials_meta = QLabel("Exports, PDFs, text materials, and images will appear here in future patches.")
+        self.materials_meta.setStyleSheet("color: #666; padding: 2px;")
+
+        self.materials_viewer = QTextEdit()
+        self.materials_viewer.setReadOnly(True)
+        self.materials_viewer.setPlaceholderText("Materials and exported chat references will appear here.")
+
+        layout.addWidget(self.materials_title)
+        layout.addWidget(self.materials_meta)
+        layout.addWidget(self.materials_viewer)
+        return tab
+
+
+    def _build_side_ask_tab(self) -> QWidget:
+        """Build the always-available Side Ask tab.
+
+        The tab collects a secondary question. MainWindow supplies any currently
+        selected chat text and/or manually pasted context as temporary context when
+        the Ask button is pressed. The answer stays here until Dato explicitly saves it to the chat or starts
+        a new chat from it.
+        """
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        self.side_ask_title = QLabel("AMADEUS Side Ask")
+        self.side_ask_title.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.side_ask_meta = QLabel("Ask a side question. Selected chat text or the context box can be used as temporary context.")
+        self.side_ask_meta.setStyleSheet("color: #666; padding: 2px;")
+
+        self.side_ask_question = QTextEdit()
+        self.side_ask_question.setPlaceholderText("Ask a small side question here...")
+        self.side_ask_question.setMaximumHeight(85)
+
+        # Manual context is separate from the question and answer. This lets Dato
+        # paste a specific message snippet or code fragment into Side Ask without
+        # needing to select text in the main chat first. The context is temporary
+        # and is not saved unless the Side Ask Q&A is explicitly saved to chat.
+        self.side_ask_context = QTextEdit()
+        self.side_ask_context.setPlaceholderText("Optional context snippet. Paste selected message/code/text here, or leave empty.")
+        self.side_ask_context.setMaximumHeight(95)
+
+        self.side_ask_answer = QTextEdit()
+        self.side_ask_answer.setReadOnly(True)
+        self.side_ask_answer.setPlaceholderText("Side Ask answer will appear here.")
+
+        button_row = QHBoxLayout()
+        self.side_ask_button = QPushButton("Ask")
+        self.side_ask_save_button = QPushButton("Save to Chat")
+        self.side_ask_new_chat_button = QPushButton("New Chat")
+        self.side_ask_button.clicked.connect(self._emit_side_ask_requested)
+        self.side_ask_save_button.clicked.connect(self.side_ask_save_requested.emit)
+        self.side_ask_new_chat_button.clicked.connect(self.side_ask_new_chat_requested.emit)
+        self.side_ask_save_button.setDisabled(True)
+        self.side_ask_new_chat_button.setDisabled(True)
+        button_row.addWidget(self.side_ask_button)
+        button_row.addWidget(self.side_ask_save_button)
+        button_row.addWidget(self.side_ask_new_chat_button)
+        button_row.addStretch()
+
+        layout.addWidget(self.side_ask_title)
+        layout.addWidget(self.side_ask_meta)
+        layout.addWidget(QLabel("Question:"))
+        layout.addWidget(self.side_ask_question)
+        layout.addWidget(QLabel("Optional context box:"))
+        layout.addWidget(self.side_ask_context)
+        layout.addWidget(QLabel("Answer:"))
+        layout.addWidget(self.side_ask_answer)
+        layout.addLayout(button_row)
+        return tab
+
+    def _build_comments_tab(self) -> QWidget:
+        """Build a read-only list of comments for the current chat."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        self.comments_title = QLabel("AMADEUS Comments")
+        self.comments_title.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.comments_meta = QLabel("Select chat text and press Add Comment to save a simple note.")
+        self.comments_meta.setStyleSheet("color: #666; padding: 2px;")
+        self.comments_viewer = QTextEdit()
+        self.comments_viewer.setReadOnly(True)
+        self.comments_viewer.setPlaceholderText("Comments for the current chat will appear here.")
+        layout.addWidget(self.comments_title)
+        layout.addWidget(self.comments_meta)
+        layout.addWidget(self.comments_viewer)
+        return tab
+
+    def show_waiting_trace(self) -> None:
+        """Show a temporary GUI-side status while Core is still working."""
+        self.state.set_trace("[Input Sent]\nWaiting for Core trace...")
+        self.render_latest_trace()
+        self.setCurrentIndex(self.PROCESS_TAB_INDEX)
+
+    def render_trace(self, compact_trace: str, detailed_trace: str | None = None) -> None:
+        """Render the latest Core trace in the Process Monitor tab."""
+        self.state.set_trace(compact_trace, detailed_trace)
+        self.render_latest_trace()
+
+    def render_latest_trace(self) -> None:
+        """Switch Compact/Detailed trace text without asking Core to run again."""
+        mode = self.trace_mode_selector.currentText().lower() if hasattr(self, "trace_mode_selector") else "compact"
+        if mode == "detailed":
+            self.process_monitor.setPlainText(self.state.detailed_trace)
+        else:
+            self.process_monitor.setPlainText(self.state.compact_trace)
+
+    def render_side_panel_payload(self, raw_payload: object, chat_context_text: str) -> None:
+        """Render a side-panel payload returned by Core.
+
+        Invalid payloads are ignored. This makes panel display optional: chat must
+        still work even if a future module returns an incomplete panel payload.
+        """
+        payload = SidePanelPayload.from_raw(raw_payload)
+        if payload is None:
+            return
+
+        self.state.set_payload(payload)
+        normalized_type = payload.panel_type.lower()
+        if normalized_type == "code":
+            self._render_code_viewer(payload)
+            self.setCurrentIndex(self.CODE_TAB_INDEX)
+            return
+
+        if normalized_type == "memory":
+            self._render_memory_panel(payload, chat_context_text)
+            self.setCurrentIndex(self.MEMORY_TAB_INDEX)
+            return
+
+        if normalized_type == "sheets":
+            self._render_sheets_panel(payload)
+            self.setCurrentIndex(self.SHEETS_TAB_INDEX)
+            return
+
+        if normalized_type == "materials":
+            self._render_materials_panel(payload)
+            self.setCurrentIndex(self.MATERIALS_TAB_INDEX)
+            return
+
+        if normalized_type == "comments":
+            self._render_comments_panel(payload)
+            self.setCurrentIndex(self.COMMENTS_TAB_INDEX)
+            return
+
+        self.setCurrentIndex(self.PROCESS_TAB_INDEX)
+
+    def render_sheets_payload(self, raw_payload: object, switch_to_tab: bool = False) -> None:
+        """Refresh the Sheets tab without always stealing focus from the current tab."""
+        payload = SidePanelPayload.from_raw(raw_payload)
+        if payload is None:
+            return
+        previous_active_tab = self.state.active_tab
+        self.state.set_payload(payload)
+        if not switch_to_tab:
+            self.state.active_tab = previous_active_tab
+        self._render_sheets_panel(payload)
+        if switch_to_tab:
+            self.setCurrentIndex(self.SHEETS_TAB_INDEX)
+
+    def render_materials_payload(self, raw_payload: object, switch_to_tab: bool = False) -> None:
+        """Refresh the Materials tab without always stealing focus."""
+        payload = SidePanelPayload.from_raw(raw_payload)
+        if payload is None:
+            return
+        previous_active_tab = self.state.active_tab
+        self.state.set_payload(payload)
+        if not switch_to_tab:
+            self.state.active_tab = previous_active_tab
+        self._render_materials_panel(payload)
+        if switch_to_tab:
+            self.setCurrentIndex(self.MATERIALS_TAB_INDEX)
+
+    def _render_code_viewer(self, payload: SidePanelPayload) -> None:
+        """Display exact file content returned by `[file]` in the Code Viewer tab."""
+        metadata = payload.metadata
+        lines = metadata.get("lines", "?")
+        characters_read = metadata.get("characters_read", len(payload.content))
+        total_characters = metadata.get("total_characters", characters_read)
+        truncated = bool(metadata.get("truncated", False))
+
+        self.code_viewer_title.setText(payload.title)
+        truncation_text = " • truncated" if truncated else ""
+        self.code_viewer_meta.setText(f"Lines: {lines} • Characters: {characters_read} of {total_characters}{truncation_text}")
+        self.code_viewer.setPlainText(payload.content)
+        self.code_viewer.moveCursor(QTextCursor.MoveOperation.Start)
+
+    def _render_memory_panel(self, payload: SidePanelPayload, chat_context_text: str) -> None:
+        """Display explicit AMADEUS memory returned by `[memory]` in the Memory tab."""
+        metadata = payload.metadata
+        scope = metadata.get("scope", "all")
+        global_count = metadata.get("global_count", 0)
+        chat_count = metadata.get("chat_count", 0)
+
+        self.state.set_chat_context(chat_context_text)
+        self.memory_panel_title.setText(payload.title)
+        self.memory_panel_meta.setText(f"Scope: {scope} • Global: {global_count} • Chat: {chat_count}")
+        combined_content = chat_context_text
+        if payload.content.strip():
+            combined_content += "\n\n---\n\n" + payload.content
+        self.memory_panel.setPlainText(combined_content)
+        self.memory_panel.moveCursor(QTextCursor.MoveOperation.Start)
+
+    def _render_sheets_panel(self, payload: SidePanelPayload) -> None:
+        """Load sheet metadata/content into the editable Sheets tab."""
+        metadata = payload.metadata
+        sheets = metadata.get("sheets") if isinstance(metadata.get("sheets"), list) else []
+        selected_sheet_id = str(metadata.get("selected_sheet_id") or "")
+        self._sheet_rows_by_id = {str(row.get("sheet_id")): row for row in sheets if isinstance(row, dict) and row.get("sheet_id")}
+
+        self._loading_sheets_panel = True
+        try:
+            self.sheets_title.setText(payload.title or "AMADEUS Sheets")
+            self.sheets_meta.setText(f"Sheets visible here: {len(self._sheet_rows_by_id)}")
+            self.sheets_selector.clear()
+            self.sheets_selector.addItem("+ New Sheet", "")
+            selected_index = 0
+            for index, row in enumerate(self._sheet_rows_by_id.values(), start=1):
+                label = f"{row.get('title', 'Untitled')} ({row.get('scope', 'chat')})"
+                sheet_id = str(row.get("sheet_id", ""))
+                self.sheets_selector.addItem(label, sheet_id)
+                if sheet_id == selected_sheet_id:
+                    selected_index = index
+            self.sheets_selector.setCurrentIndex(selected_index)
+        finally:
+            self._loading_sheets_panel = False
+
+        self._load_selected_sheet_into_editor(self.sheets_selector.currentIndex())
+
+    def _render_materials_panel(self, payload: SidePanelPayload) -> None:
+        """Display the Materials panel foundation or future material content."""
+        metadata = payload.metadata
+        material_count = metadata.get("material_count", 0)
+        status = metadata.get("status", "ready")
+        self.materials_title.setText(payload.title)
+        self.materials_meta.setText(f"Materials: {material_count} • Status: {status}")
+        self.materials_viewer.setPlainText(payload.content)
+        self.materials_viewer.moveCursor(QTextCursor.MoveOperation.Start)
+
+    def _load_selected_sheet_into_editor(self, index: int) -> None:
+        """Show the selected sheet row in the editor fields."""
+        if self._loading_sheets_panel:
+            return
+        sheet_id = self.sheets_selector.itemData(index)
+        if not isinstance(sheet_id, str) or not sheet_id:
+            self._prepare_new_sheet()
+            return
+
+        row = self._sheet_rows_by_id.get(sheet_id)
+        if row is None:
+            self._prepare_new_sheet()
+            return
+
+        self._loading_sheets_panel = True
+        try:
+            self.sheet_id_label.setText(f"Sheet id: {sheet_id}")
+            self.sheet_title_input.setText(str(row.get("title") or ""))
+            scope = str(row.get("scope") or "chat")
+            self.sheet_scope_selector.setCurrentText(scope if scope in {"chat", "global"} else "chat")
+            self.sheet_description_input.setPlainText(str(row.get("description") or ""))
+            self.sheet_content_editor.setPlainText(str(row.get("content") or ""))
+        finally:
+            self._loading_sheets_panel = False
+
+    def _prepare_new_sheet(self) -> None:
+        """Clear editor fields so Save creates a new sheet."""
+        if self._loading_sheets_panel:
+            return
+        self._loading_sheets_panel = True
+        try:
+            self.sheets_selector.setCurrentIndex(0)
+            self.sheet_id_label.setText("New sheet")
+            self.sheet_title_input.clear()
+            self.sheet_scope_selector.setCurrentText("chat")
+            self.sheet_description_input.clear()
+            self.sheet_content_editor.clear()
+        finally:
+            self._loading_sheets_panel = False
+
+    def _emit_sheet_save_requested(self) -> None:
+        """Ask MainWindow/Core to save the current sheet editor fields."""
+        sheet_id = self.sheets_selector.currentData()
+        if not isinstance(sheet_id, str):
+            sheet_id = ""
+        payload = {
+            "sheet_id": sheet_id,
+            "title": self.sheet_title_input.text().strip() or "New Sheet",
+            "scope": self.sheet_scope_selector.currentText().strip() or "chat",
+            "description": self.sheet_description_input.toPlainText().strip(),
+            "content": self.sheet_content_editor.toPlainText(),
+        }
+        self.sheet_save_requested.emit(payload)
+
+    def _emit_sheet_delete_requested(self) -> None:
+        """Ask MainWindow/Core to delete the selected sheet."""
+        sheet_id = self.sheets_selector.currentData()
+        if isinstance(sheet_id, str) and sheet_id:
+            self.sheet_delete_requested.emit(sheet_id)
+
+
+    def render_side_ask_answer(self, question: str, answer: str, selected_text: str = "") -> None:
+        """Show a completed Side Ask answer and enable save/new-chat actions."""
+        context_note = "Temporary context attached." if selected_text.strip() else "No temporary context attached."
+        self.side_ask_meta.setText(context_note)
+        self.side_ask_question.setPlainText(question)
+        self.side_ask_answer.setPlainText(answer)
+        self.side_ask_answer.moveCursor(QTextCursor.MoveOperation.Start)
+        self.side_ask_save_button.setDisabled(False)
+        self.side_ask_new_chat_button.setDisabled(False)
+        self.setCurrentIndex(self.SIDE_ASK_TAB_INDEX)
+
+    def show_side_ask_waiting(self) -> None:
+        """Show a temporary waiting state for Side Ask."""
+        self.side_ask_answer.setPlainText("Waiting for AMADEUS Side Ask answer...")
+        self.side_ask_save_button.setDisabled(True)
+        self.side_ask_new_chat_button.setDisabled(True)
+        self.setCurrentIndex(self.SIDE_ASK_TAB_INDEX)
+
+    def set_side_ask_busy(self, busy: bool) -> None:
+        """Disable only Side Ask controls while the side request runs."""
+        self.side_ask_button.setDisabled(busy)
+        self.side_ask_question.setDisabled(busy)
+        self.side_ask_context.setDisabled(busy)
+
+    def current_side_ask_question(self) -> str:
+        """Return the current Side Ask question text."""
+        return self.side_ask_question.toPlainText().strip()
+
+    def current_side_ask_answer(self) -> str:
+        """Return the current Side Ask answer text."""
+        return self.side_ask_answer.toPlainText().strip()
+
+    def current_side_ask_manual_context(self) -> str:
+        """Return manually pasted Side Ask context from the separate context box."""
+        return self.side_ask_context.toPlainText().strip()
+
+    def _emit_side_ask_requested(self) -> None:
+        """Emit the current Side Ask question and manual context to MainWindow/Core."""
+        self.side_ask_requested.emit(self.current_side_ask_question(), self.current_side_ask_manual_context())
+
+    def render_comments_payload(self, raw_payload: object, switch_to_tab: bool = False) -> None:
+        """Refresh the Comments tab from a side-panel payload."""
+        payload = SidePanelPayload.from_raw(raw_payload)
+        if payload is None:
+            return
+        previous_active_tab = self.state.active_tab
+        self.state.set_payload(payload)
+        if not switch_to_tab:
+            self.state.active_tab = previous_active_tab
+        self._render_comments_panel(payload)
+        if switch_to_tab:
+            self.setCurrentIndex(self.COMMENTS_TAB_INDEX)
+
+    def _render_comments_panel(self, payload: SidePanelPayload) -> None:
+        """Display saved comments for the current chat."""
+        count = payload.metadata.get("comment_count", 0)
+        self.comments_title.setText(payload.title)
+        self.comments_meta.setText(f"Comments in this chat: {count}")
+        self.comments_viewer.setPlainText(payload.content)
+        self.comments_viewer.moveCursor(QTextCursor.MoveOperation.Start)
+
+    def render_chat_context(self, chat_context_text: str) -> None:
+        """Show current chat title/description in the Memory tab by default."""
+        self.state.set_chat_context(chat_context_text)
+        self.memory_panel_title.setText("Current Chat Context")
+        self.memory_panel_meta.setText("Chat title/description are active context for this chat.")
+        self.memory_panel.setPlainText(chat_context_text)
+        self.memory_panel.moveCursor(QTextCursor.MoveOperation.Start)
+
+    def reset_for_chat_switch(self, chat_context_text: str) -> None:
+        """Clear visible panel state that belongs to the previous chat."""
+        self.state.reset_for_chat_switch(chat_context_text)
+        self.render_latest_trace()
+        self.code_viewer_title.setText("No file opened")
+        self.code_viewer_meta.setText("Use [file][module][file.py] to open exact file content here.")
+        self.code_viewer.clear()
+        self.side_ask_answer.clear()
+        self.side_ask_context.clear()
+        self.side_ask_save_button.setDisabled(True)
+        self.side_ask_new_chat_button.setDisabled(True)
+        self.comments_viewer.clear()
+        self.render_chat_context(chat_context_text)
+        self.setCurrentIndex(self.PROCESS_TAB_INDEX)
+
+    def current_panel_context_text(self) -> str:
+        """Expose visible panel context for future `[panel]` annotation use."""
+        return self.state.current_context_text()

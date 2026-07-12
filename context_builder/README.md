@@ -9,3 +9,7 @@ It keeps prompt-context logic outside Core and Chat:
 - Chat formats the final prompt.
 - Storage stores history.
 - Project File Reader reads approved project docs.
+
+## Memory Context
+
+Context Builder now adds explicit global/chat memory to normal chat prompts. This memory is separate from recent chat history and is only created through `[memory]` annotations in V1.
