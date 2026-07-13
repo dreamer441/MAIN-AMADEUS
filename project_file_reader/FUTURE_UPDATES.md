@@ -2,11 +2,8 @@
 
 ## Near-term improvements
 
-- Add recursive tree inspection with depth limits.
 - Add exact line-range reads, for example lines 10-30 from a file.
 - Add exact search within files, for example finding every occurrence of a class or function name.
-- Add file metadata display such as modified time and size in human-readable format.
-- Add a small GUI file viewer panel so Dato can inspect verified files visually.
 - Add tests for more natural-language phrasing around file reads and line counts.
 
 ## Later improvements
@@ -26,5 +23,5 @@ Do not add file editing, deletion, autonomy, or unrestricted disk scanning insid
 - Add explicit line-range reads such as `[file][module][file.py][lines 1-50]`.
 - Add safe search inside module files without loading every file into the prompt.
 - Add a verified-file reference object so `[current][last_file]` can reuse opened file content without relying on chat history truncation.
-- Add read limits and warnings for very large files before they are sent to Code Viewer.
-- Add optional file tree view in the right panel after the Code Viewer foundation is stable.
+- Add modified-time metadata and human-readable size formatting.
+- Add optional recursive tree expansion depth limits for very large projects.

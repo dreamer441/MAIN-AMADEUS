@@ -105,3 +105,9 @@ Core routes. It should not become a place for large feature logic. If Core start
 - With text outside blocks, Core sends only that text to Chat and injects combined deterministic block results as callable context.
 - With block-only input, Core returns the deterministic results together without calling the LLM.
 - An unclosed single leading annotation retains the established legacy callable sheet/export route.
+
+## Phase 4 Project File APIs
+
+- Core exposes project-root tree navigation and file-open APIs while delegating every filesystem operation to Project File Reader.
+- Core can arm one explicitly selected file for the next normal message or ask about a selected file immediately.
+- Selected file content is process-local callable context, consumed once, and never saved as memory or automatically injected into later requests.

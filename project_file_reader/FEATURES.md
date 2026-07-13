@@ -46,3 +46,11 @@ For file/folder/content questions, AMADEUS must answer from Project File Reader 
 - File reads preserve exact visible text without trimming the final character or newline.
 - Full-file reads are intended for Code Viewer side-panel display, not main chat dumping.
 - Normal chat now receives only compact overview context for summaries/explanations; exact read operations should use `[file]`.
+
+## Phase 4 Project Navigation
+
+- Provides safe direct tree navigation from the project root for the Code Viewer and Core APIs.
+- Returns verified file name, root-relative path, extension, and byte-size metadata.
+- Uses explicit UTF-8 BOM, UTF-8, CP1252, and Latin-1 decoding fallbacks; unsupported/binary data is rejected rather than replaced.
+- Rejects traversal, ignored directories, unsupported types, and files over the 2,000,000-byte inspection limit.
+- Existing module APIs used by `[file]` delegate to the same guarded root reader used by GUI navigation.

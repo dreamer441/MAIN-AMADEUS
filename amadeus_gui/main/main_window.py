@@ -157,6 +157,24 @@ class SideAskWorker(QObject):
         self.finished.emit(result)
 
 
+class ProjectFileAskWorker(QObject):
+    """Run an explicit selected-file question through Core off the GUI thread."""
+
+    finished = pyqtSignal(object)
+
+    def __init__(self, core: AmadeusCore, relative_path: str, question: str) -> None:
+        super().__init__()
+        self.core = core
+        self.relative_path = relative_path
+        self.question = question
+
+    def run(self) -> None:
+        try:
+            self.finished.emit(self.core.ask_about_project_file(self.relative_path, self.question))
+        except Exception as error:
+            self.finished.emit({"response": f"AMADEUS error: {error}", "trace": "Project file request failed."})
+
+
 class NewChatDialog(QDialog):
     """Small creation dialog for chat workspace metadata.
 
@@ -239,6 +257,7 @@ class AmadeusMainWindow(QMainWindow):
         self._refresh_sheets_panel(switch_to_tab=False)
         self._refresh_materials_panel(switch_to_tab=False)
         self._refresh_comments_panel(switch_to_tab=False)
+        self._refresh_project_tree()
 
     def _build_ui(self) -> None:
         """Create chat controls, right-side tabs, annotation suggestions, and input."""
@@ -267,6 +286,10 @@ class AmadeusMainWindow(QMainWindow):
         self.right_panel.side_ask_requested.connect(self._start_side_ask)
         self.right_panel.side_ask_save_requested.connect(self._save_side_ask_to_chat)
         self.right_panel.side_ask_new_chat_requested.connect(self._create_chat_from_side_ask)
+        self.right_panel.project_tree_requested.connect(self._refresh_project_tree)
+        self.right_panel.project_file_open_requested.connect(self._open_project_file)
+        self.right_panel.project_file_context_requested.connect(self._use_project_file_in_next_message)
+        self.right_panel.project_file_ask_requested.connect(self._ask_about_project_file)
 
         main_row.addLayout(chat_column, stretch=3)
         main_row.addWidget(self.right_panel, stretch=2)
@@ -372,6 +395,49 @@ class AmadeusMainWindow(QMainWindow):
         thread.finished.connect(thread.deleteLater)
         thread.finished.connect(lambda: self._remove_worker(thread, worker))
 
+        self._active_threads.append(thread)
+        self._active_workers.append(worker)
+        thread.start()
+
+    def _refresh_project_tree(self, relative_path: str = "") -> None:
+        """Request Code Viewer navigation data from Core, never the filesystem directly."""
+        try:
+            self.right_panel.render_project_tree(self.core.get_project_tree(relative_path))
+        except Exception as error:
+            self.status_label.setText(f"Could not refresh project tree: {error}")
+
+    def _open_project_file(self, relative_path: str) -> None:
+        """Open a selected tree file through Core's trusted project reader API."""
+        try:
+            self.right_panel.render_side_panel_payload(
+                self.core.open_project_file(relative_path), chat_context_text=self._current_chat_context_text()
+            )
+            self.status_label.setText(f"Opened {relative_path}")
+        except Exception as error:
+            self.status_label.setText(f"Could not open file: {error}")
+
+    def _use_project_file_in_next_message(self, relative_path: str) -> None:
+        """Arm one explicit, non-persistent selected-file context through Core."""
+        try:
+            self.core.use_project_file_in_next_message(relative_path)
+            self.status_label.setText(f"{relative_path} will be used for the next normal message only.")
+        except Exception as error:
+            self.status_label.setText(f"Could not select file: {error}")
+
+    def _ask_about_project_file(self, relative_path: str, question: str) -> None:
+        """Ask about one selected file without exposing its content in the chat UI."""
+        self._append_message("User", question)
+        self._set_waiting_for_response(True)
+        self.right_panel.show_waiting_trace()
+        thread = QThread(self)
+        worker = ProjectFileAskWorker(self.core, relative_path, question)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._handle_response)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: self._remove_worker(thread, worker))
         self._active_threads.append(thread)
         self._active_workers.append(worker)
         thread.start()

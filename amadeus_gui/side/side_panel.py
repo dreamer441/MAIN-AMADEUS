@@ -7,9 +7,9 @@ screen. This widget contains the current tabs and rendering logic while
 
 from __future__ import annotations
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QTextCursor
-from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTabWidget, QTextEdit, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QComboBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTabWidget, QTextEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
 from side_panel import SidePanelPayload, SidePanelState
 
@@ -28,6 +28,10 @@ class RightPanelWidget(QTabWidget):
     side_ask_requested = pyqtSignal(str, str)
     side_ask_save_requested = pyqtSignal()
     side_ask_new_chat_requested = pyqtSignal()
+    project_tree_requested = pyqtSignal(str)
+    project_file_open_requested = pyqtSignal(str)
+    project_file_context_requested = pyqtSignal(str)
+    project_file_ask_requested = pyqtSignal(str, str)
 
     PROCESS_TAB_INDEX = 0
     CODE_TAB_INDEX = 1
@@ -81,7 +85,7 @@ class RightPanelWidget(QTabWidget):
         return tab
 
     def _build_code_viewer_tab(self) -> QWidget:
-        """Build a read-only code/file viewer for `[file]` annotation results."""
+        """Build a read-only Code Viewer backed by Core project-tree requests."""
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
@@ -90,6 +94,36 @@ class RightPanelWidget(QTabWidget):
         self.code_viewer_meta = QLabel("Use [file][module][file.py] to open exact file content here.")
         self.code_viewer_meta.setStyleSheet("color: #666; padding: 2px;")
 
+        tree_controls = QHBoxLayout()
+        self.code_tree_filter = QLineEdit()
+        self.code_tree_filter.setPlaceholderText("Filter filenames")
+        self.code_tree_filter.textChanged.connect(self._filter_code_tree)
+        refresh_button = QPushButton("Refresh")
+        refresh_button.clicked.connect(lambda: self.project_tree_requested.emit(""))
+        self.copy_relative_path_button = QPushButton("Copy Relative Path")
+        self.copy_relative_path_button.clicked.connect(self._copy_selected_relative_path)
+        tree_controls.addWidget(self.code_tree_filter)
+        tree_controls.addWidget(refresh_button)
+        tree_controls.addWidget(self.copy_relative_path_button)
+
+        self.code_tree_path = QLabel("Project root")
+        self.code_tree_path.setStyleSheet("color: #666; padding: 2px;")
+        self.code_tree = QTreeWidget()
+        self.code_tree.setHeaderLabels(["Project files", "Size"])
+        self.code_tree.itemExpanded.connect(self._request_expanded_directory)
+        self.code_tree.itemDoubleClicked.connect(self._open_tree_item)
+
+        file_actions = QHBoxLayout()
+        self.use_file_next_button = QPushButton("Use in Next Message")
+        self.use_file_next_button.clicked.connect(self._use_selected_file_in_next_message)
+        self.ask_file_input = QLineEdit()
+        self.ask_file_input.setPlaceholderText("Ask AMADEUS about selected file")
+        self.ask_file_button = QPushButton("Ask AMADEUS About File")
+        self.ask_file_button.clicked.connect(self._ask_about_selected_file)
+        file_actions.addWidget(self.use_file_next_button)
+        file_actions.addWidget(self.ask_file_input)
+        file_actions.addWidget(self.ask_file_button)
+
         self.code_viewer = QTextEdit()
         self.code_viewer.setReadOnly(True)
         self.code_viewer.setPlaceholderText("Exact file content opened by [file] will appear here.")
@@ -97,6 +131,10 @@ class RightPanelWidget(QTabWidget):
 
         layout.addWidget(self.code_viewer_title)
         layout.addWidget(self.code_viewer_meta)
+        layout.addLayout(tree_controls)
+        layout.addWidget(self.code_tree_path)
+        layout.addWidget(self.code_tree)
+        layout.addLayout(file_actions)
         layout.addWidget(self.code_viewer)
         return tab
 
@@ -375,9 +413,106 @@ class RightPanelWidget(QTabWidget):
 
         self.code_viewer_title.setText(payload.title)
         truncation_text = " • truncated" if truncated else ""
-        self.code_viewer_meta.setText(f"Lines: {lines} • Characters: {characters_read} of {total_characters}{truncation_text}")
+        size_bytes = metadata.get("size_bytes")
+        encoding = metadata.get("encoding")
+        details = f"Lines: {lines} • Characters: {characters_read} of {total_characters}{truncation_text}"
+        if size_bytes is not None:
+            details += f" • {size_bytes} bytes"
+        if encoding:
+            details += f" • {encoding}"
+        self.code_viewer_meta.setText(details)
         self.code_viewer.setPlainText(payload.content)
         self.code_viewer.moveCursor(QTextCursor.MoveOperation.Start)
+
+    def render_project_tree(self, raw_tree: object) -> None:
+        """Render one Core-provided directory listing and keep lazy child folders."""
+        if not isinstance(raw_tree, dict):
+            return
+        path = str(raw_tree.get("path") or "")
+        parent = self._find_tree_item(path)
+        if parent is None:
+            self.code_tree.clear()
+            parent = self.code_tree.invisibleRootItem()
+        else:
+            parent.takeChildren()
+        self.code_tree_path.setText("Project root" if not path else f"Project root / {path}")
+        for folder in raw_tree.get("folders", []):
+            if not isinstance(folder, dict):
+                continue
+            item = QTreeWidgetItem([str(folder.get("name", "")), ""])
+            item.setData(0, Qt.ItemDataRole.UserRole, str(folder.get("relative_path", "")))
+            item.setData(0, Qt.ItemDataRole.UserRole + 1, "folder")
+            item.addChild(QTreeWidgetItem(["Loading...", ""]))
+            parent.addChild(item)
+        for file_entry in raw_tree.get("files", []):
+            if not isinstance(file_entry, dict):
+                continue
+            item = QTreeWidgetItem([str(file_entry.get("name", "")), f"{file_entry.get('size_bytes', 0)} B"])
+            item.setData(0, Qt.ItemDataRole.UserRole, str(file_entry.get("relative_path", "")))
+            item.setData(0, Qt.ItemDataRole.UserRole + 1, "file")
+            parent.addChild(item)
+        if parent is self.code_tree.invisibleRootItem():
+            self.code_tree.expandToDepth(0)
+        self._filter_code_tree(self.code_tree_filter.text())
+
+    def _find_tree_item(self, path: str) -> QTreeWidgetItem | None:
+        """Find an already-rendered directory node by its Core-provided path."""
+        def visit(parent: QTreeWidgetItem) -> QTreeWidgetItem | None:
+            for index in range(parent.childCount()):
+                child = parent.child(index)
+                if child.data(0, Qt.ItemDataRole.UserRole) == path:
+                    return child
+                match = visit(child)
+                if match is not None:
+                    return match
+            return None
+        return visit(self.code_tree.invisibleRootItem())
+
+    def _request_expanded_directory(self, item: QTreeWidgetItem) -> None:
+        if item.data(0, Qt.ItemDataRole.UserRole + 1) == "folder":
+            self.project_tree_requested.emit(str(item.data(0, Qt.ItemDataRole.UserRole)))
+
+    def _open_tree_item(self, item: QTreeWidgetItem, _column: int) -> None:
+        if item.data(0, Qt.ItemDataRole.UserRole + 1) == "file":
+            self.project_file_open_requested.emit(str(item.data(0, Qt.ItemDataRole.UserRole)))
+
+    def _selected_code_file_path(self) -> str:
+        item = self.code_tree.currentItem()
+        if item is not None and item.data(0, Qt.ItemDataRole.UserRole + 1) == "file":
+            return str(item.data(0, Qt.ItemDataRole.UserRole))
+        return ""
+
+    def _copy_selected_relative_path(self) -> None:
+        path = self._selected_code_file_path()
+        if path:
+            QApplication.clipboard().setText(path)
+
+    def _use_selected_file_in_next_message(self) -> None:
+        path = self._selected_code_file_path()
+        if path:
+            self.project_file_context_requested.emit(path)
+
+    def _ask_about_selected_file(self) -> None:
+        path = self._selected_code_file_path()
+        question = self.ask_file_input.text().strip()
+        if path and question:
+            self.project_file_ask_requested.emit(path, question)
+
+    def _filter_code_tree(self, text: str) -> None:
+        """Filter visible filenames only; tree data remains Core-owned and complete."""
+        needle = text.strip().lower()
+        def apply(parent: QTreeWidgetItem) -> bool:
+            matched_child = False
+            for index in range(parent.childCount()):
+                child = parent.child(index)
+                child_match = apply(child)
+                is_file = child.data(0, Qt.ItemDataRole.UserRole + 1) == "file"
+                own_match = not needle or not is_file or needle in child.text(0).lower()
+                visible = own_match or child_match
+                child.setHidden(not visible)
+                matched_child = matched_child or visible
+            return matched_child
+        apply(self.code_tree.invisibleRootItem())
 
     def _render_memory_panel(self, payload: SidePanelPayload, chat_context_text: str) -> None:
         """Display explicit AMADEUS memory returned by `[memory]` in the Memory tab."""

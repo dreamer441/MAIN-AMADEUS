@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-13 - Phase 4: Project File Navigation
+
+- Date: 2026-07-13
+- Phase: Phase 4 - Project File Navigation
+- Feature or fix: Added guarded full project-root Code Viewer navigation and explicit one-shot selected-file context.
+- What changed: Project File Reader now supplies root-relative directory trees and metadata, size-limited binary-safe text reads with explicit decoding fallbacks, and module read delegation through the same trusted reader. Core exposes tree/open/select/ask APIs. The Code Viewer now has lazy tree expansion, filtering, refresh, path copying, and selected-file actions.
+- Files/modules affected: `project_file_reader`, `amadeus_core`, `amadeus_gui`, focused tests, and Phase 4 documentation.
+- User-visible behavior: Users can browse and open safe project files from Code Viewer, copy their relative paths, use a selected file in exactly the next normal message, or ask about it directly.
+- Architecture notes: GUI filesystem signals terminate at Core; Core delegates to Project File Reader. Selected-file content remains process-local, callable context and is consumed once rather than persisted or automatically injected.
+- Tests performed: `py -3 -m compileall .` completed successfully; `py -3 -m unittest discover -s tests -v` passed 17 focused parser, Core, GUI keyboard, project-reader, and temporary-context tests.
+- Known limitations: Tree loading is direct-directory lazy expansion without project-wide search, syntax highlighting, modified-time metadata, or recursive depth controls.
+
 ## 2026-07-13 - Phase 3: Annotation Engine V2
 
 - Date: 2026-07-13

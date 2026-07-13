@@ -33,6 +33,10 @@ READABLE_FILE_EXTENSIONS = {
     ".cfg",
 }
 
+MAX_FILE_SIZE_BYTES = 2_000_000
+DEFAULT_MAX_CHARACTERS = 120_000
+TEXT_ENCODINGS = ("utf-8-sig", "utf-8", "cp1252", "latin-1")
+
 
 class ProjectModuleNotFoundError(ValueError):
     """Raised when a requested AMADEUS module folder cannot be found."""
@@ -135,6 +139,30 @@ class ModuleFileContent:
 
 
 @dataclass(frozen=True)
+class ProjectFileContent:
+    """Verified project-root file content and metadata for GUI/Core consumers."""
+
+    relative_path: str
+    file_name: str
+    size_bytes: int
+    extension: str
+    encoding: str
+    content: str
+    truncated: bool
+    total_characters: int
+    total_lines: int
+
+
+@dataclass(frozen=True)
+class ProjectDirectoryListing:
+    """Direct safe tree entries below a project-root-relative directory."""
+
+    requested_path: str
+    folders: list[ModuleDirectoryEntry]
+    files: list[ModuleFileEntry]
+
+
+@dataclass(frozen=True)
 class ModuleFileLine:
     """One exact line read from a verified project file."""
 
@@ -182,6 +210,57 @@ class ProjectFileReader:
     def list_module_names(self) -> list[str]:
         """List available top-level module folders."""
         return self.indexer.list_module_names()
+
+    def list_project_directory(self, requested_path: str = "") -> ProjectDirectoryListing:
+        """List direct safe entries anywhere below the project root.
+
+        This is the public tree/navigation boundary for both the Code Viewer and
+        future callers. It returns metadata only and never reads file content.
+        """
+        directory_path = self._resolve_safe_project_directory(requested_path)
+        folders: list[ModuleDirectoryEntry] = []
+        files: list[ModuleFileEntry] = []
+        for child in directory_path.iterdir():
+            if self._is_ignored_path(child):
+                continue
+            if child.is_dir():
+                folders.append(ModuleDirectoryEntry(child.name, child.relative_to(self.project_root).as_posix()))
+            elif child.is_file():
+                files.append(self._file_entry(self.project_root, child))
+        folders.sort(key=lambda entry: entry.relative_path.lower())
+        files.sort(key=lambda entry: entry.relative_path.lower())
+        return ProjectDirectoryListing(
+            requested_path=directory_path.relative_to(self.project_root).as_posix() if directory_path != self.project_root else "",
+            folders=folders,
+            files=files,
+        )
+
+    def read_project_file(
+        self, requested_path: str, max_characters: int = DEFAULT_MAX_CHARACTERS
+    ) -> ProjectFileContent:
+        """Read one safe project-root-relative text file with verified metadata."""
+        target_path = self._resolve_safe_project_file(requested_path)
+        size_bytes = target_path.stat().st_size
+        if size_bytes > MAX_FILE_SIZE_BYTES:
+            raise UnsafeProjectFileError(
+                f"File is too large for safe inspection ({size_bytes} bytes; limit {MAX_FILE_SIZE_BYTES} bytes)."
+            )
+        raw = target_path.read_bytes()
+        if self._is_binary_content(raw):
+            raise UnsafeProjectFileError("Binary files cannot be opened in the text Code Viewer.")
+        text, encoding = self._decode_text(raw)
+        truncated = len(text) > max_characters
+        return ProjectFileContent(
+            relative_path=target_path.relative_to(self.project_root).as_posix(),
+            file_name=target_path.name,
+            size_bytes=size_bytes,
+            extension=target_path.suffix.lower(),
+            encoding=encoding,
+            content=text[:max_characters],
+            truncated=truncated,
+            total_characters=len(text),
+            total_lines=len(text.splitlines()),
+        )
 
     def build_project_overview(self) -> str:
         """Build compact read-only context for normal summary/explanation chat.
@@ -283,18 +362,18 @@ class ProjectFileReader:
         """
         module_path, target_path = self._resolve_safe_file_path(requested_module, requested_file)
 
-        text = target_path.read_text(encoding="utf-8", errors="replace")
-        truncated = len(text) > max_characters
-        visible_text = text[:max_characters]
+        project_content = self.read_project_file(
+            target_path.relative_to(self.project_root).as_posix(), max_characters=max_characters
+        )
         relative_path = target_path.relative_to(module_path).as_posix()
         return ModuleFileContent(
             module_name=module_path.name,
             file_name=target_path.name,
             relative_path=relative_path,
-            content=visible_text,
-            truncated=truncated,
-            total_characters=len(text),
-            total_lines=len(text.splitlines()),
+            content=project_content.content,
+            truncated=project_content.truncated,
+            total_characters=project_content.total_characters,
+            total_lines=project_content.total_lines,
         )
 
     def read_module_file_line(self, requested_module: str, requested_file: str, line_number: int) -> ModuleFileLine:
@@ -348,6 +427,8 @@ class ProjectFileReader:
 
         target_path = (module_path / clean_requested_file).resolve()
         self._validate_inside_module(module_path, target_path)
+        if self._is_ignored_path(target_path):
+            raise UnsafeProjectFileError("Requested path is inside an ignored project directory.")
 
         if not target_path.is_file():
             raise ProjectFileNotFoundError(requested_file, self._available_file_paths(module_path))
@@ -357,6 +438,34 @@ class ProjectFileReader:
             )
 
         return module_path, target_path
+
+    def _resolve_safe_project_file(self, requested_path: str) -> Path:
+        """Resolve one readable file under the project root without traversal."""
+        clean_requested_path = self._clean_relative_path(requested_path)
+        if not clean_requested_path:
+            raise ProjectFileNotFoundError(requested_path, [])
+        target_path = (self.project_root / clean_requested_path).resolve()
+        self._validate_inside_project(target_path)
+        if self._is_ignored_path(target_path):
+            raise UnsafeProjectFileError("Requested path is inside an ignored project directory.")
+        if not target_path.is_file():
+            raise ProjectFileNotFoundError(requested_path, [])
+        if target_path.suffix.lower() not in READABLE_FILE_EXTENSIONS:
+            raise UnsafeProjectFileError(
+                f"Unsupported file type for read-only text inspection: {target_path.suffix or '[no extension]'}"
+            )
+        return target_path
+
+    def _resolve_safe_project_directory(self, requested_path: str) -> Path:
+        """Resolve one navigable directory under the project root without traversal."""
+        clean_requested_path = self._clean_relative_path(requested_path)
+        directory_path = (self.project_root / clean_requested_path).resolve() if clean_requested_path else self.project_root
+        self._validate_inside_project(directory_path)
+        if self._is_ignored_path(directory_path):
+            raise UnsafeProjectFileError("Requested path is inside an ignored project directory.")
+        if not directory_path.is_dir():
+            raise ProjectDirectoryNotFoundError(requested_path, [])
+        return directory_path
 
     def _resolve_safe_directory_path(self, module_path: Path, requested_path: str) -> Path:
         """Resolve and validate a directory path inside one module."""
@@ -376,10 +485,35 @@ class ProjectFileReader:
         except ValueError as exc:
             raise UnsafeProjectFileError("Requested path is outside the module folder.") from exc
 
+    def _validate_inside_project(self, target_path: Path) -> None:
+        """Prevent root-relative tree operations from escaping the project root."""
+        try:
+            target_path.relative_to(self.project_root)
+        except ValueError as exc:
+            raise UnsafeProjectFileError("Requested path is outside the project root.") from exc
+
     def _read_file_lines(self, target_path: Path) -> list[str]:
         """Read text as exact logical lines without trailing newline characters."""
-        text = target_path.read_text(encoding="utf-8", errors="replace")
-        return text.splitlines()
+        content = self.read_project_file(target_path.relative_to(self.project_root).as_posix())
+        return content.content.splitlines()
+
+    def _decode_text(self, raw: bytes) -> tuple[str, str]:
+        """Decode verified text using explicit fallbacks instead of replacement bytes."""
+        for encoding in TEXT_ENCODINGS:
+            try:
+                return raw.decode(encoding), encoding
+            except UnicodeDecodeError:
+                continue
+        raise UnsafeProjectFileError("File encoding is not supported for safe text inspection.")
+
+    def _is_binary_content(self, raw: bytes) -> bool:
+        """Reject NUL/control-heavy data before any permissive text fallback can mask it."""
+        if b"\x00" in raw:
+            return True
+        if not raw:
+            return False
+        controls = sum(byte < 32 and byte not in {9, 10, 12, 13} for byte in raw)
+        return controls / len(raw) > 0.05
 
     def _resolve_module_path_or_raise(self, requested_name: str) -> Path:
         """Resolve a module path or raise a precise no-guessing error."""
@@ -416,12 +550,15 @@ class ProjectFileReader:
 
     def _is_ignored_path(self, path: Path) -> bool:
         """Skip cache/build/private implementation clutter in file listings."""
-        ignored_parts = {"__pycache__", ".git", ".idea", ".venv", "venv"}
+        ignored_parts = {
+            "__pycache__", ".git", ".idea", ".venv", ".vscode", "venv",
+            "node_modules", "build", "dist", "data",
+        }
         return any(part in ignored_parts for part in path.parts)
 
     def _read_text_file(self, path: Path) -> str:
         """Read one required module documentation file."""
-        return path.read_text(encoding="utf-8", errors="replace").strip()
+        return self.read_project_file(path.relative_to(self.project_root).as_posix()).content.strip()
 
     def _clean_markdown(self, content: str) -> str:
         """Remove one leading markdown title so annotation output is easier to read."""

@@ -69,6 +69,7 @@ Do not add memory, autonomy, file editing, mind map, or reasoning implementation
 - [ ] Add a generic callable-context priority system for `[sheet]`, `[export]`, future `[panel]`, and future `[current]`.
 - [ ] Add trace inspection for exact callable context size and selected source references.
 - Add typed annotation-block result provenance and side-panel aggregation when multiple blocks update different panels.
+- Add typed selected-file context provenance if multiple future callable sources need composition rules.
 
 ## Side Ask / Comments Future
 

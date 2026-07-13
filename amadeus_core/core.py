@@ -24,7 +24,7 @@ from materials_module import MaterialsService
 from memory_module import MemoryService
 from comments_module import CommentService
 from side_ask_module import SideAskService
-from project_file_reader import ProjectFileReader
+from project_file_reader import ProjectFileContent, ProjectFileReader
 from sheets_module import SheetService
 from storage import ChatHistoryMessage, ChatHistoryStore, ChatMetadata
 
@@ -51,6 +51,9 @@ class AmadeusCore:
         # Read-only project file access is its own module. Core may ask for approved context,
         # but Core must not become a general file browser/editor.
         self.file_reader = ProjectFileReader(self.project_root)
+        # This is intentionally process-local and consumed once. It is not chat
+        # history, memory, or automatic context for later requests.
+        self._selected_project_file_context: ProjectFileContent | None = None
 
         # Identity is global AMADEUS self-definition. It is not a temporary reasoning mode.
         self.identity_service = IdentityService(self.project_root)
@@ -273,6 +276,7 @@ class AmadeusCore:
             # Normal messages are no longer used for exact file opening. They can still receive
             # compact project overview context for summaries/explanations, but verified exact
             # file reads now live behind `[file]` to avoid fragile natural-language parsing.
+            selected_file_context = self._consume_selected_project_file_context()
             trace_logger.add_event(
                 "routing",
                 "Routing Decision",
@@ -355,6 +359,15 @@ class AmadeusCore:
             identity_prompt = self.identity_prompt_builder.build_for_chat(
                 project_context_active=context_bundle.project_context_active,
             )
+            callable_context = None
+            if selected_file_context is not None:
+                callable_context = self._build_selected_file_context(selected_file_context)
+                trace_logger.add_event(
+                    "file",
+                    "Selected File Context",
+                    f"Attached `{selected_file_context.relative_path}` to this request only.",
+                    level="success",
+                )
             trace_logger.add_event(
                 "module",
                 "Identity Module",
@@ -369,6 +382,7 @@ class AmadeusCore:
                 project_context=context_bundle.project_context,
                 memory_context=context_bundle.memory_context,
                 chat_workspace_context=context_bundle.chat_workspace_context,
+                callable_context=callable_context,
                 identity_prompt=identity_prompt,
                 trace_logger=trace_logger,
             )
@@ -651,6 +665,61 @@ class AmadeusCore:
         )
         trace_logger.add_event("output", "Output Ready", "Side Ask answer returned to GUI without transcript save.", level="success")
         return self._build_response_payload(response, trace_logger)
+
+    def get_project_tree(self, relative_path: str = "") -> dict[str, Any]:
+        """Return a verified direct project-root tree listing for the Code Viewer."""
+        listing = self.file_reader.list_project_directory(relative_path)
+        return {
+            "path": listing.requested_path,
+            "folders": [entry.__dict__ for entry in listing.folders],
+            "files": [entry.__dict__ for entry in listing.files],
+        }
+
+    def open_project_file(self, relative_path: str) -> dict[str, Any]:
+        """Open one verified project file through the trusted reader only."""
+        content = self.file_reader.read_project_file(relative_path)
+        return self._build_project_file_panel_payload(content)
+
+    def use_project_file_in_next_message(self, relative_path: str) -> dict[str, Any]:
+        """Arm exactly one normal request with verified selected-file context."""
+        self._selected_project_file_context = self.file_reader.read_project_file(relative_path)
+        return self._build_project_file_panel_payload(self._selected_project_file_context)
+
+    def ask_about_project_file(self, relative_path: str, question: str) -> dict[str, Any]:
+        """Ask one normal-chat question with a selected file as one-shot context."""
+        self.use_project_file_in_next_message(relative_path)
+        return self.handle_user_message(question)
+
+    def _consume_selected_project_file_context(self) -> ProjectFileContent | None:
+        """Return and clear explicitly armed file context before a normal chat route."""
+        content = self._selected_project_file_context
+        self._selected_project_file_context = None
+        return content
+
+    def _build_selected_file_context(self, content: ProjectFileContent) -> str:
+        """Label temporary verified content so Chat cannot mistake it for memory."""
+        truncation = " (truncated for safety)" if content.truncated else ""
+        return (
+            f"Selected project file for this request only: {content.relative_path}{truncation}\n"
+            f"Encoding: {content.encoding}; size: {content.size_bytes} bytes\n\n{content.content}"
+        )
+
+    def _build_project_file_panel_payload(self, content: ProjectFileContent) -> dict[str, Any]:
+        """Create the shared Code Viewer payload for GUI project-tree file opens."""
+        return {
+            "type": "code",
+            "title": content.relative_path,
+            "content": content.content,
+            "metadata": {
+                "relative_path": content.relative_path,
+                "lines": content.total_lines,
+                "characters_read": len(content.content),
+                "total_characters": content.total_characters,
+                "size_bytes": content.size_bytes,
+                "encoding": content.encoding,
+                "truncated": content.truncated,
+            },
+        }
 
     def save_side_ask_to_chat(self, question: str, answer: str, selected_text: str = "") -> list[ChatHistoryMessage]:
         """Persist the latest Side Ask Q&A into the active chat and return new messages."""

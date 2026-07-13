@@ -98,3 +98,10 @@ The Process Monitor shows real events such as input received, annotation check, 
 
 - The visible annotation suggestion list supports Up/Down selection, Enter or Tab insertion, and Escape to hide it.
 - When the suggestion list is closed, the input keeps its normal Enter-send and Shift+Enter-newline behavior.
+
+## Phase 4 Code Viewer Navigation
+
+- Code Viewer now displays a Core-provided project tree with lazy expand/collapse, refresh, root-relative path display, and filename filtering.
+- Double-clicking a tree file opens verified content; Copy Relative Path copies only the selected verified path.
+- Use in Next Message and Ask AMADEUS About File emit GUI signals to MainWindow, which delegates to Core only.
+- Selected-file context is explicit and one-shot; browsing or opening a file alone never adds it to chat context.
