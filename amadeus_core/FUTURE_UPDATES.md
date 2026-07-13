@@ -48,10 +48,15 @@ Do not add memory, autonomy, file editing, mind map, or reasoning implementation
 ## Callable Context Roadmap
 
 - [x] Add first callable context route through `[sheet]`.
-- [ ] Add `[export][chat][message range]` callable context.
+- [x] Add `[export][chat][message range]` callable context.
 - [ ] Add `[panel]` callable context.
 - [ ] Add `[current][message number]` callable context.
 - [ ] Add unified callable context service before Mind Map integration.
+
+## Phase 2 Boundary Follow-up
+
+- [ ] Remove the inactive legacy callable sheet/export helper bodies from Core after the new Annotation Module router has a focused routing test suite.
+- [ ] Extract remaining Core feature routes one module at a time; do not combine them into a Core rewrite.
 
 ## Export Routing Future
 

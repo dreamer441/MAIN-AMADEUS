@@ -91,3 +91,9 @@ Core routes. It should not become a place for large feature logic. If Core start
 - Side Ask uses selected text as callable context but does not persist automatically.
 - Core exposes `save_side_ask_to_chat()` for explicit transcript insertion.
 - Core exposes comment save/list payload methods through `comments_module`.
+
+## Phase 2 Callable Annotation Routing
+
+- Core delegates callable `[sheet]` and `[export]` prompt handling to `annotation_module.CallableContextRouter`.
+- The Annotation Module now resolves the selected stored object, builds callable context, and preserves the export scope lock through module public APIs.
+- Core supplies routing callbacks, trace delivery, and persistence coordination without implementing sheet/export selection details in the active request path.

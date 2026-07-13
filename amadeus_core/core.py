@@ -11,7 +11,7 @@ GUI -> Core -> Annotation check OR Chat route -> Context Builder / Identity -> C
 from pathlib import Path
 from typing import Any
 
-from annotation_module import AnnotationContext, AnnotationParser, AnnotationRegistry, AnnotationResult, AnnotationSuggestionService, ParsedAnnotation
+from annotation_module import AnnotationContext, AnnotationParser, AnnotationRegistry, AnnotationResult, AnnotationSuggestionService, CallableContextRouter, ParsedAnnotation
 from annotation_module.annotations import ExportAnnotation, FileAnnotation, IdentityAnnotation, MemoryAnnotation, SheetAnnotation
 from amadeus_chat import AmadeusChatModule
 from amadeus_core.module_registry import ModuleRegistry
@@ -114,6 +114,19 @@ class AmadeusCore:
             current_chat_id_provider=self.chat_history_store.get_current_chat_id,
         )
 
+        # Callable annotation routes interpret sheets/exports inside Annotation Module.
+        # Core only supplies module public APIs and keeps ownership of response delivery.
+        self.callable_context_router = CallableContextRouter(
+            current_chat_id_provider=self.chat_history_store.get_current_chat_id,
+            sheet_service=self.sheet_service,
+            export_service=self.export_service,
+            context_builder=self.context_builder,
+            identity_prompt_builder=self.identity_prompt_builder,
+            chat_module_provider=lambda: self.module_registry.get("chat"),
+            persist_exchange=self._persist_exchange,
+            build_response=self._build_response_payload,
+        )
+
         self._register_builtin_modules()
         self._register_annotations()
 
@@ -196,13 +209,13 @@ class AmadeusCore:
                 # with that sheet as callable context. This keeps sheets deterministic without
                 # dumping them into always-active memory.
                 if parsed_annotation.annotation_name == "sheet" and parsed_annotation.content.strip():
-                    return self._handle_sheet_prompt_request(parsed_annotation, clean_message, trace_logger)
+                    return self.callable_context_router.handle_sheet_prompt_request(parsed_annotation, clean_message, trace_logger)
 
                 # `[export][chat][range] prompt` is another callable-context route.
                 # The export module selects exact numbered messages from the saved export,
                 # then Chat answers using only that selected export segment as extra context.
                 if parsed_annotation.annotation_name == "export" and parsed_annotation.content.strip():
-                    return self._handle_export_prompt_request(parsed_annotation, clean_message, trace_logger)
+                    return self.callable_context_router.handle_export_prompt_request(parsed_annotation, clean_message, trace_logger)
 
                 trace_logger.add_event(
                     "routing",

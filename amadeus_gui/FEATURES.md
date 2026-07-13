@@ -86,3 +86,10 @@ The Process Monitor shows real events such as input received, annotation check, 
 - The optional context box lets Dato paste a message/code snippet without relying only on chat text selection.
 - MainWindow combines selected chat text and manual Side Ask context before sending the Side Ask request to Core.
 - Comments panel headings now show `comment(message_number)` for easier reading and future metadata linking.
+
+## Phase 2 GUI Package Boundary
+
+- `amadeus_gui.main` owns the main window and whole-window chat coordination.
+- `amadeus_gui.side` owns the tabbed right-side workspace panel and its Qt rendering.
+- `amadeus_gui` keeps `AmadeusMainWindow` as the stable public GUI import used by application startup.
+- No visible layout, controls, or panel behavior changed during the package move.

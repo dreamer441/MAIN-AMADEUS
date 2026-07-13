@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-13 - Phase 2: Lightweight Core and GUI Separation
+
+- Date: 2026-07-13
+- Phase: Phase 2 - Lightweight Core and GUI Separation
+- Feature or fix: Established main/side GUI package ownership and moved active callable sheet/export routing into the Annotation Module.
+- What changed: Moved the main window to `amadeus_gui.main`, moved right-side workspace rendering to `amadeus_gui.side`, and added `CallableContextRouter` for `[sheet]` and `[export]` prompt routes.
+- Files/modules affected: `amadeus_gui`, `amadeus_core`, `annotation_module`, and their Phase 2 documentation.
+- User-visible behavior: No intentional visible behavior changes. The existing window, controls, tabs, annotations, and response payloads retain their behavior.
+- Architecture notes: Core delegates active callable annotation feature logic through injected module public APIs. GUI startup continues to use the stable `amadeus_gui.AmadeusMainWindow` import, avoiding circular imports.
+- Tests performed: `py -3 -m compileall .` completed successfully. Core and GUI import/initialization validation completed successfully after the package move.
+- Known limitations: This controlled slice leaves inactive legacy callable sheet/export helper bodies in Core until focused router tests are available. Other GUI responsibilities remain in `main_window.py` until each has a clear independent boundary.
+
 ## 2026-07-13 - Phase 1: Repository Safety and Development Baseline
 
 - Date: 2026-07-13

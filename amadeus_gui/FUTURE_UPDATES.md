@@ -51,6 +51,11 @@
 - [ ] Add Diff Viewer tab for future safe code patching.
 - [ ] Add copy buttons and search controls to Code Viewer.
 
+## Phase 2 GUI Extraction Follow-up
+
+- [ ] Extract `chat_input.py`, `chat_list.py`, and `main_controller.py` only when their existing MainWindow responsibilities can move without changing behavior.
+- [ ] Split individual side-panel widgets only when a panel gains independent interaction or state beyond `RightPanelWidget`.
+
 ## Sheets / Materials UI Roadmap
 
 - [x] Editable Sheets panel.

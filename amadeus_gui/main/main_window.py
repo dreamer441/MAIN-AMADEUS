@@ -28,7 +28,7 @@ from PyQt6.QtWidgets import (
 )
 
 from amadeus_core import AmadeusCore
-from amadeus_gui.right_panel_widget import RightPanelWidget
+from amadeus_gui.side import RightPanelWidget
 
 
 class MessageInput(QTextEdit):
