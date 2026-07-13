@@ -96,6 +96,11 @@ The Process Monitor shows real events such as input received, annotation check, 
 
 ## Phase 3 Annotation Suggestions
 
+## Code Viewer Browser Polish
+
+- The project browser is collapsed by default and can be expanded from the `Project Browser` dropdown control.
+- File and folder names are shown without text elision; a horizontal scrollbar preserves complete long paths.
+
 - The visible annotation suggestion list supports Up/Down selection, Enter or Tab insertion, and Escape to hide it.
 - When the suggestion list is closed, the input keeps its normal Enter-send and Shift+Enter-newline behavior.
 

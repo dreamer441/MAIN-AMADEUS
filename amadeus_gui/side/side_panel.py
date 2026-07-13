@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QTextCursor
-from PyQt6.QtWidgets import QApplication, QComboBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTabWidget, QTextEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QComboBox, QHeaderView, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTabWidget, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
 from side_panel import SidePanelPayload, SidePanelState
 
@@ -94,6 +94,16 @@ class RightPanelWidget(QTabWidget):
         self.code_viewer_meta = QLabel("Use [file][module][file.py] to open exact file content here.")
         self.code_viewer_meta.setStyleSheet("color: #666; padding: 2px;")
 
+        self.project_browser_toggle = QToolButton()
+        self.project_browser_toggle.setText("Project Browser")
+        self.project_browser_toggle.setCheckable(True)
+        self.project_browser_toggle.setChecked(False)
+        self.project_browser_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.project_browser_toggle.setArrowType(Qt.ArrowType.RightArrow)
+
+        self.project_browser_container = QWidget()
+        browser_layout = QVBoxLayout(self.project_browser_container)
+        browser_layout.setContentsMargins(0, 0, 0, 0)
         tree_controls = QHBoxLayout()
         self.code_tree_filter = QLineEdit()
         self.code_tree_filter.setPlaceholderText("Filter filenames")
@@ -110,8 +120,14 @@ class RightPanelWidget(QTabWidget):
         self.code_tree_path.setStyleSheet("color: #666; padding: 2px;")
         self.code_tree = QTreeWidget()
         self.code_tree.setHeaderLabels(["Project files", "Size"])
+        self.code_tree.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self.code_tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.code_tree.header().setStretchLastSection(False)
+        self.code_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        self.code_tree.setColumnWidth(0, 520)
         self.code_tree.itemExpanded.connect(self._request_expanded_directory)
         self.code_tree.itemDoubleClicked.connect(self._open_tree_item)
+        self.project_browser_toggle.toggled.connect(self._set_project_browser_visible)
 
         file_actions = QHBoxLayout()
         self.use_file_next_button = QPushButton("Use in Next Message")
@@ -131,12 +147,20 @@ class RightPanelWidget(QTabWidget):
 
         layout.addWidget(self.code_viewer_title)
         layout.addWidget(self.code_viewer_meta)
-        layout.addLayout(tree_controls)
-        layout.addWidget(self.code_tree_path)
-        layout.addWidget(self.code_tree)
+        layout.addWidget(self.project_browser_toggle)
+        browser_layout.addLayout(tree_controls)
+        browser_layout.addWidget(self.code_tree_path)
+        browser_layout.addWidget(self.code_tree)
+        self.project_browser_container.hide()
+        layout.addWidget(self.project_browser_container)
         layout.addLayout(file_actions)
         layout.addWidget(self.code_viewer)
         return tab
+
+    def _set_project_browser_visible(self, visible: bool) -> None:
+        """Collapse the project browser so opened code keeps the available panel space."""
+        self.project_browser_container.setVisible(visible)
+        self.project_browser_toggle.setArrowType(Qt.ArrowType.DownArrow if visible else Qt.ArrowType.RightArrow)
 
     def _build_memory_tab(self) -> QWidget:
         """Build the read-only Memory panel for `[memory]` annotation results."""

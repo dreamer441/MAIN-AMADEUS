@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-13 - Code Viewer Browser Polish
+
+- Date: 2026-07-13
+- Phase: Phase 4 - Exact Code Access and Interactive Code Viewer
+- Feature or fix: Made Code Viewer filenames fully visible and the project browser collapsible.
+- What changed: Disabled tree text elision, enabled horizontal scrolling for long paths, and placed project navigation inside a collapsed-by-default Project Browser control.
+- Files/modules affected: `amadeus_gui/side/side_panel.py`, GUI documentation, and `AMADEUS_CHANGELOG.md`.
+- User-visible behavior: Opened code receives more panel space by default; expand Project Browser only when navigating. Long filenames remain readable instead of ending with ellipses.
+- Architecture notes: GUI-only presentation change; the trusted project file service and Core routing remain unchanged.
+- Tests performed: `py -3 -m compileall .` and `py -3 -m unittest tests.test_annotation_gui -v` completed successfully.
+- Known limitations: Very long paths may require horizontal scrolling within the project browser.
+
 ## 2026-07-13 - Phase 4: Project File Navigation
 
 - Date: 2026-07-13
