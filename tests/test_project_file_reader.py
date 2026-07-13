@@ -56,25 +56,44 @@ class ProjectFileReaderTests(unittest.TestCase):
         self.assertEqual(root_content.total_characters, module_content.total_characters)
 
 
-class TemporarySelectedFileContextTests(unittest.TestCase):
-    """Verify selected project files are explicit one-shot, in-memory context only."""
+class SelectedFileContextTests(unittest.TestCase):
+    """Verify explicit file context is exact, line-labelled, and request-scoped."""
 
-    def test_context_is_consumed_once_and_contains_verified_metadata(self) -> None:
+    def test_context_is_line_labelled_and_range_checked(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / "selected.py").write_text("value = 1\n", encoding="utf-8")
+            (root / "selected.py").write_text("first\nsecond\nthird\n", encoding="utf-8")
+            reader = ProjectFileReader(root)
+
+            context = reader.build_project_file_context("selected.py", "2-3")
+
+            self.assertIn("Lines: 2-3 of 3", context)
+            self.assertIn("2: second\n3: third", context)
+            self.assertNotIn("1: first", context)
+            for invalid_range in ("0", "3-2", "4", "one", "1-4"):
+                with self.subTest(line_range=invalid_range):
+                    with self.assertRaises(ValueError):
+                        reader.build_project_file_context("selected.py", invalid_range)
+
+    def test_core_uses_file_context_only_when_enabled(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "selected.py").write_text("first\nsecond\n", encoding="utf-8")
             core = object.__new__(AmadeusCore)
             core.file_reader = ProjectFileReader(root)
-            core._selected_project_file_context = None
+            received_contexts: list[str | None] = []
 
-            panel = core.use_project_file_in_next_message("selected.py")
-            first = core._consume_selected_project_file_context()
-            second = core._consume_selected_project_file_context()
+            def capture(message: str, callable_context: str | None = None) -> dict[str, str]:
+                received_contexts.append(callable_context)
+                return {"response": message}
 
-            self.assertEqual("selected.py", panel["metadata"]["relative_path"])
-            self.assertIsNotNone(first)
-            self.assertIn("Selected project file for this request only", core._build_selected_file_context(first))
-            self.assertIsNone(second)
+            core.handle_user_message = capture  # type: ignore[method-assign]
+
+            core.ask_about_project_file("selected.py", "visual only", False, "not a range")
+            core.ask_about_project_file("selected.py", "explain this", True, "2")
+
+            self.assertEqual([None], received_contexts[:1])
+            self.assertIn("2: second", received_contexts[1] or "")
 
 
 if __name__ == "__main__":

@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-13 - Code Viewer Explicit File Context
+
+- Date: 2026-07-13
+- Phase: Phase 4 - Exact Code Access and Interactive Code Viewer
+- Feature or fix: Added line-labelled code display and explicit range-limited file context for direct questions.
+- What changed: Code Viewer now renders one-based line labels. Removed the Use in Next Message workflow. Ask AMADEUS About File now has a default-off context toggle and optional `15` or `15-30` selector; Project File Reader validates ranges and builds exact line-labelled context only when Core is instructed to include it.
+- Files/modules affected: `amadeus_gui`, `amadeus_core`, `project_file_reader`, focused tests, and Phase 4 documentation.
+- User-visible behavior: Opened files remain visual by default. Enabling context sends only the selected verified file or range with a direct file question.
+- Architecture notes: GUI still delegates through Core; Core delegates range validation and content formatting to Project File Reader. No selected-file context is retained for later normal messages.
+- Tests performed: `py -3 -m compileall .` completed successfully; `py -3 -m unittest discover -s tests -v` passed 19 tests.
+- Known limitations: Code Viewer does not yet provide syntax highlighting.
+
 ## 2026-07-13 - Code Viewer Browser Polish
 
 - Date: 2026-07-13

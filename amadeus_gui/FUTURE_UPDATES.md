@@ -15,7 +15,7 @@
 
 - Improve suggestion popup positioning and add mouse-free filtering feedback.
 - Add syntax highlighting for Code Viewer.
-- Add line number gutter and syntax highlighting controls to Code Viewer.
+- Add syntax highlighting controls to Code Viewer.
 - Add Diff Viewer tab before any write/edit ability is introduced.
 - Add `[panel]` support later so AMADEUS can explicitly receive current right-panel context when Dato asks.
 
@@ -49,7 +49,7 @@
 - [ ] Add Sheets tab.
 - [ ] Add Materials tab.
 - [ ] Add Diff Viewer tab for future safe code patching.
-- [x] Add copy-relative-path, filename filter, refresh, and selected-file context controls to Code Viewer.
+- [x] Add copy-relative-path, filename filter, refresh, line labels, and explicit selected-file context controls to Code Viewer.
 
 ## Phase 2 GUI Extraction Follow-up
 

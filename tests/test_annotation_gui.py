@@ -10,6 +10,7 @@ from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
 from amadeus_gui.main.main_window import MessageInput
+from amadeus_gui.side import RightPanelWidget
 
 
 class MessageInputSuggestionKeyTests(unittest.TestCase):
@@ -61,6 +62,19 @@ class MessageInputSuggestionKeyTests(unittest.TestCase):
 
         self.assertEqual(1, self.sent)
         self.assertEqual(0, self.applied)
+
+
+class CodeViewerLineNumberTests(unittest.TestCase):
+    """Verify Code Viewer preserves source text while exposing source line numbers."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.application = QApplication.instance() or QApplication([])
+
+    def test_displayed_code_has_one_based_line_labels(self) -> None:
+        panel = RightPanelWidget("Ready")
+
+        self.assertEqual("1: first\n2: \n3: third", panel._line_labelled_code("first\n\nthird\n"))
 
 
 if __name__ == "__main__":

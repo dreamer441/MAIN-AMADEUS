@@ -14,6 +14,7 @@ Important boundary:
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 
 from project_file_reader.module_indexer import ModuleIndexer, REQUIRED_MODULE_DOCS
 
@@ -262,6 +263,26 @@ class ProjectFileReader:
             total_lines=len(text.splitlines()),
         )
 
+    def build_project_file_context(self, requested_path: str, line_range: str = "") -> str:
+        """Return verified, line-labelled content for one explicit chat request.
+
+        The range is optional: an empty value means every readable line.  This
+        method is deliberately separate from the Code Viewer payload so callers
+        cannot accidentally send unlabeled visual text as model context.
+        """
+        content = self.read_project_file(requested_path, max_characters=MAX_FILE_SIZE_BYTES)
+        lines = content.content.splitlines()
+        start_line, end_line = self._parse_line_range(line_range, len(lines))
+        labelled_lines = "\n".join(
+            f"{line_number}: {lines[line_number - 1]}"
+            for line_number in range(start_line, end_line + 1)
+        )
+        return (
+            f"Selected project file for this request only: {content.relative_path}\n"
+            f"Lines: {start_line}-{end_line} of {len(lines)}\n\n"
+            f"{labelled_lines}"
+        )
+
     def build_project_overview(self) -> str:
         """Build compact read-only context for normal summary/explanation chat.
 
@@ -496,6 +517,22 @@ class ProjectFileReader:
         """Read text as exact logical lines without trailing newline characters."""
         content = self.read_project_file(target_path.relative_to(self.project_root).as_posix())
         return content.content.splitlines()
+
+    def _parse_line_range(self, line_range: str, total_lines: int) -> tuple[int, int]:
+        """Validate the optional one-based line selector before reading context."""
+        if total_lines == 0:
+            raise ValueError("Cannot select lines from an empty file.")
+        clean_range = line_range.strip()
+        if not clean_range:
+            return 1, total_lines
+        match = re.fullmatch(r"(\d+)(?:\s*-\s*(\d+))?", clean_range)
+        if match is None:
+            raise ValueError("Line range must be a line number such as 15 or a range such as 15-30.")
+        start_line = int(match.group(1))
+        end_line = int(match.group(2) or start_line)
+        if start_line < 1 or end_line < start_line or end_line > total_lines:
+            raise ValueError(f"Line range must be within 1-{total_lines} and start before it ends.")
+        return start_line, end_line
 
     def _decode_text(self, raw: bytes) -> tuple[str, str]:
         """Decode verified text using explicit fallbacks instead of replacement bytes."""

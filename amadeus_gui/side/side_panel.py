@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QTextCursor
-from PyQt6.QtWidgets import QApplication, QComboBox, QHeaderView, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTabWidget, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QCheckBox, QComboBox, QHeaderView, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTabWidget, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
 from side_panel import SidePanelPayload, SidePanelState
 
@@ -30,8 +30,7 @@ class RightPanelWidget(QTabWidget):
     side_ask_new_chat_requested = pyqtSignal()
     project_tree_requested = pyqtSignal(str)
     project_file_open_requested = pyqtSignal(str)
-    project_file_context_requested = pyqtSignal(str)
-    project_file_ask_requested = pyqtSignal(str, str)
+    project_file_ask_requested = pyqtSignal(str, str, bool, str)
 
     PROCESS_TAB_INDEX = 0
     CODE_TAB_INDEX = 1
@@ -130,13 +129,16 @@ class RightPanelWidget(QTabWidget):
         self.project_browser_toggle.toggled.connect(self._set_project_browser_visible)
 
         file_actions = QHBoxLayout()
-        self.use_file_next_button = QPushButton("Use in Next Message")
-        self.use_file_next_button.clicked.connect(self._use_selected_file_in_next_message)
+        self.include_code_context = QCheckBox("Include code context")
+        self.include_code_context.setToolTip("When enabled, Ask includes only the selected file or line range.")
+        self.code_context_range = QLineEdit()
+        self.code_context_range.setPlaceholderText("Lines (optional: 15 or 15-30)")
         self.ask_file_input = QLineEdit()
         self.ask_file_input.setPlaceholderText("Ask AMADEUS about selected file")
         self.ask_file_button = QPushButton("Ask AMADEUS About File")
         self.ask_file_button.clicked.connect(self._ask_about_selected_file)
-        file_actions.addWidget(self.use_file_next_button)
+        file_actions.addWidget(self.include_code_context)
+        file_actions.addWidget(self.code_context_range)
         file_actions.addWidget(self.ask_file_input)
         file_actions.addWidget(self.ask_file_button)
 
@@ -445,8 +447,12 @@ class RightPanelWidget(QTabWidget):
         if encoding:
             details += f" • {encoding}"
         self.code_viewer_meta.setText(details)
-        self.code_viewer.setPlainText(payload.content)
+        self.code_viewer.setPlainText(self._line_labelled_code(payload.content))
         self.code_viewer.moveCursor(QTextCursor.MoveOperation.Start)
+
+    def _line_labelled_code(self, content: str) -> str:
+        """Render Code Viewer text with stable one-based source line numbers."""
+        return "\n".join(f"{number}: {line}" for number, line in enumerate(content.splitlines(), start=1))
 
     def render_project_tree(self, raw_tree: object) -> None:
         """Render one Core-provided directory listing and keep lazy child folders."""
@@ -511,16 +517,13 @@ class RightPanelWidget(QTabWidget):
         if path:
             QApplication.clipboard().setText(path)
 
-    def _use_selected_file_in_next_message(self) -> None:
-        path = self._selected_code_file_path()
-        if path:
-            self.project_file_context_requested.emit(path)
-
     def _ask_about_selected_file(self) -> None:
         path = self._selected_code_file_path()
         question = self.ask_file_input.text().strip()
         if path and question:
-            self.project_file_ask_requested.emit(path, question)
+            self.project_file_ask_requested.emit(
+                path, question, self.include_code_context.isChecked(), self.code_context_range.text()
+            )
 
     def _filter_code_tree(self, text: str) -> None:
         """Filter visible filenames only; tree data remains Core-owned and complete."""

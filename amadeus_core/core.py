@@ -51,9 +51,6 @@ class AmadeusCore:
         # Read-only project file access is its own module. Core may ask for approved context,
         # but Core must not become a general file browser/editor.
         self.file_reader = ProjectFileReader(self.project_root)
-        # This is intentionally process-local and consumed once. It is not chat
-        # history, memory, or automatic context for later requests.
-        self._selected_project_file_context: ProjectFileContent | None = None
 
         # Identity is global AMADEUS self-definition. It is not a temporary reasoning mode.
         self.identity_service = IdentityService(self.project_root)
@@ -156,7 +153,7 @@ class AmadeusCore:
         self.annotation_registry.register("sheet", SheetAnnotation())
         self.annotation_registry.register("export", ExportAnnotation())
 
-    def handle_user_message(self, message: str) -> dict[str, Any]:
+    def handle_user_message(self, message: str, callable_context: str | None = None) -> dict[str, Any]:
         """Route user text and return both AMADEUS output and Process Monitor trace.
 
         This method is the main request pipeline. Keep it readable: each trace event
@@ -276,7 +273,6 @@ class AmadeusCore:
             # Normal messages are no longer used for exact file opening. They can still receive
             # compact project overview context for summaries/explanations, but verified exact
             # file reads now live behind `[file]` to avoid fragile natural-language parsing.
-            selected_file_context = self._consume_selected_project_file_context()
             trace_logger.add_event(
                 "routing",
                 "Routing Decision",
@@ -359,13 +355,11 @@ class AmadeusCore:
             identity_prompt = self.identity_prompt_builder.build_for_chat(
                 project_context_active=context_bundle.project_context_active,
             )
-            callable_context = None
-            if selected_file_context is not None:
-                callable_context = self._build_selected_file_context(selected_file_context)
+            if callable_context:
                 trace_logger.add_event(
                     "file",
                     "Selected File Context",
-                    f"Attached `{selected_file_context.relative_path}` to this request only.",
+                    "Attached explicit line-labelled selected-file context to this request only.",
                     level="success",
                 )
             trace_logger.add_event(
@@ -680,29 +674,12 @@ class AmadeusCore:
         content = self.file_reader.read_project_file(relative_path)
         return self._build_project_file_panel_payload(content)
 
-    def use_project_file_in_next_message(self, relative_path: str) -> dict[str, Any]:
-        """Arm exactly one normal request with verified selected-file context."""
-        self._selected_project_file_context = self.file_reader.read_project_file(relative_path)
-        return self._build_project_file_panel_payload(self._selected_project_file_context)
-
-    def ask_about_project_file(self, relative_path: str, question: str) -> dict[str, Any]:
-        """Ask one normal-chat question with a selected file as one-shot context."""
-        self.use_project_file_in_next_message(relative_path)
-        return self.handle_user_message(question)
-
-    def _consume_selected_project_file_context(self) -> ProjectFileContent | None:
-        """Return and clear explicitly armed file context before a normal chat route."""
-        content = self._selected_project_file_context
-        self._selected_project_file_context = None
-        return content
-
-    def _build_selected_file_context(self, content: ProjectFileContent) -> str:
-        """Label temporary verified content so Chat cannot mistake it for memory."""
-        truncation = " (truncated for safety)" if content.truncated else ""
-        return (
-            f"Selected project file for this request only: {content.relative_path}{truncation}\n"
-            f"Encoding: {content.encoding}; size: {content.size_bytes} bytes\n\n{content.content}"
-        )
+    def ask_about_project_file(
+        self, relative_path: str, question: str, include_context: bool = False, line_range: str = ""
+    ) -> dict[str, Any]:
+        """Ask a direct question, adding verified selected-file context only when enabled."""
+        context = self.file_reader.build_project_file_context(relative_path, line_range) if include_context else None
+        return self.handle_user_message(question, callable_context=context)
 
     def _build_project_file_panel_payload(self, content: ProjectFileContent) -> dict[str, Any]:
         """Create the shared Code Viewer payload for GUI project-tree file opens."""

@@ -50,3 +50,7 @@ Annotations should stay deterministic command routes. They should not become a p
 - [x] Keep shorthand export annotation compatibility.
 - [ ] Add keyboard-friendly range builder for export annotations.
 - [ ] Add Materials-panel controls that generate export annotations automatically.
+
+## File Annotation Context
+
+- [x] Let Code Viewer context select one exact line (`15`) or an inclusive range (`15-30`).

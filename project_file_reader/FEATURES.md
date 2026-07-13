@@ -54,3 +54,4 @@ For file/folder/content questions, AMADEUS must answer from Project File Reader 
 - Uses explicit UTF-8 BOM, UTF-8, CP1252, and Latin-1 decoding fallbacks; unsupported/binary data is rejected rather than replaced.
 - Rejects traversal, ignored directories, unsupported types, and files over the 2,000,000-byte inspection limit.
 - Existing module APIs used by `[file]` delegate to the same guarded root reader used by GUI navigation.
+- Builds exact one-based line-labelled context for an explicitly selected full file or validated `15` / `15-30` range.

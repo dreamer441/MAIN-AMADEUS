@@ -162,15 +162,21 @@ class ProjectFileAskWorker(QObject):
 
     finished = pyqtSignal(object)
 
-    def __init__(self, core: AmadeusCore, relative_path: str, question: str) -> None:
+    def __init__(self, core: AmadeusCore, relative_path: str, question: str, include_context: bool, line_range: str) -> None:
         super().__init__()
         self.core = core
         self.relative_path = relative_path
         self.question = question
+        self.include_context = include_context
+        self.line_range = line_range
 
     def run(self) -> None:
         try:
-            self.finished.emit(self.core.ask_about_project_file(self.relative_path, self.question))
+            self.finished.emit(
+                self.core.ask_about_project_file(
+                    self.relative_path, self.question, self.include_context, self.line_range
+                )
+            )
         except Exception as error:
             self.finished.emit({"response": f"AMADEUS error: {error}", "trace": "Project file request failed."})
 
@@ -288,7 +294,6 @@ class AmadeusMainWindow(QMainWindow):
         self.right_panel.side_ask_new_chat_requested.connect(self._create_chat_from_side_ask)
         self.right_panel.project_tree_requested.connect(self._refresh_project_tree)
         self.right_panel.project_file_open_requested.connect(self._open_project_file)
-        self.right_panel.project_file_context_requested.connect(self._use_project_file_in_next_message)
         self.right_panel.project_file_ask_requested.connect(self._ask_about_project_file)
 
         main_row.addLayout(chat_column, stretch=3)
@@ -416,21 +421,13 @@ class AmadeusMainWindow(QMainWindow):
         except Exception as error:
             self.status_label.setText(f"Could not open file: {error}")
 
-    def _use_project_file_in_next_message(self, relative_path: str) -> None:
-        """Arm one explicit, non-persistent selected-file context through Core."""
-        try:
-            self.core.use_project_file_in_next_message(relative_path)
-            self.status_label.setText(f"{relative_path} will be used for the next normal message only.")
-        except Exception as error:
-            self.status_label.setText(f"Could not select file: {error}")
-
-    def _ask_about_project_file(self, relative_path: str, question: str) -> None:
+    def _ask_about_project_file(self, relative_path: str, question: str, include_context: bool, line_range: str) -> None:
         """Ask about one selected file without exposing its content in the chat UI."""
         self._append_message("User", question)
         self._set_waiting_for_response(True)
         self.right_panel.show_waiting_trace()
         thread = QThread(self)
-        worker = ProjectFileAskWorker(self.core, relative_path, question)
+        worker = ProjectFileAskWorker(self.core, relative_path, question, include_context, line_range)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(self._handle_response)

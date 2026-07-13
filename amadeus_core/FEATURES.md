@@ -109,5 +109,5 @@ Core routes. It should not become a place for large feature logic. If Core start
 ## Phase 4 Project File APIs
 
 - Core exposes project-root tree navigation and file-open APIs while delegating every filesystem operation to Project File Reader.
-- Core can arm one explicitly selected file for the next normal message or ask about a selected file immediately.
-- Selected file content is process-local callable context, consumed once, and never saved as memory or automatically injected into later requests.
+- Core asks about a selected file directly and adds file context only when the caller explicitly enables it.
+- Enabled file context is verified, line-labelled, range-limited when requested, and never saved as memory or automatically injected into later requests.

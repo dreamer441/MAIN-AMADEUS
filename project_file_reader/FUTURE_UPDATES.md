@@ -2,7 +2,6 @@
 
 ## Near-term improvements
 
-- Add exact line-range reads, for example lines 10-30 from a file.
 - Add exact search within files, for example finding every occurrence of a class or function name.
 - Add tests for more natural-language phrasing around file reads and line counts.
 
@@ -20,7 +19,7 @@ Do not add file editing, deletion, autonomy, or unrestricted disk scanning insid
 
 ## Future File Reader Improvements
 
-- Add explicit line-range reads such as `[file][module][file.py][lines 1-50]`.
+- Add line-range syntax to `[file]` annotations using the existing verified range reader.
 - Add safe search inside module files without loading every file into the prompt.
 - Add a verified-file reference object so `[current][last_file]` can reuse opened file content without relying on chat history truncation.
 - Add modified-time metadata and human-readable size formatting.

@@ -108,5 +108,6 @@ The Process Monitor shows real events such as input received, annotation check, 
 
 - Code Viewer now displays a Core-provided project tree with lazy expand/collapse, refresh, root-relative path display, and filename filtering.
 - Double-clicking a tree file opens verified content; Copy Relative Path copies only the selected verified path.
-- Use in Next Message and Ask AMADEUS About File emit GUI signals to MainWindow, which delegates to Core only.
-- Selected-file context is explicit and one-shot; browsing or opening a file alone never adds it to chat context.
+- Displayed code has one-based line labels, including blank source lines.
+- Ask AMADEUS About File has an explicit, default-off Include code context control and optional `15` or `15-30` line selector.
+- With context disabled, the visible file remains visual only; with context enabled, only the verified selected file/range enters that direct Ask request.
