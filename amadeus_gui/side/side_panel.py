@@ -31,6 +31,12 @@ class RightPanelWidget(QTabWidget):
     project_tree_requested = pyqtSignal(str)
     project_file_open_requested = pyqtSignal(str)
     project_file_ask_requested = pyqtSignal(str, str, bool, str)
+    material_preview_requested = pyqtSignal(str)
+    material_open_requested = pyqtSignal(str)
+    material_use_requested = pyqtSignal(str)
+    material_ask_requested = pyqtSignal(str, str)
+    material_remove_requested = pyqtSignal(str)
+    material_copy_reference_requested = pyqtSignal(str)
 
     PROCESS_TAB_INDEX = 0
     CODE_TAB_INDEX = 1
@@ -253,14 +259,47 @@ class RightPanelWidget(QTabWidget):
         return tab
 
     def _build_materials_tab(self) -> QWidget:
-        """Build the read-only Materials panel foundation."""
+        """Build Materials controls; material data remains Core/module-owned."""
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
         self.materials_title = QLabel("AMADEUS Materials")
         self.materials_title.setStyleSheet("font-size: 16px; font-weight: bold;")
-        self.materials_meta = QLabel("Exports, PDFs, text materials, and images will appear here in future patches.")
+        self.materials_meta = QLabel("Select a reference. Opening or selecting never adds it to chat.")
         self.materials_meta.setStyleSheet("color: #666; padding: 2px;")
+
+        self._loading_materials_panel = False
+        self._material_rows_by_id: dict[str, dict] = {}
+        self.materials_selector = QComboBox()
+        self.materials_selector.currentIndexChanged.connect(self._load_selected_material)
+        self.materials_details = QLabel("No material selected.")
+        self.materials_details.setWordWrap(True)
+        actions = QHBoxLayout()
+        self.material_preview_button = QPushButton("Preview")
+        self.material_open_button = QPushButton("Open")
+        self.material_use_button = QPushButton("Use in Next Message")
+        self.material_copy_button = QPushButton("Copy Ref")
+        self.material_remove_button = QPushButton("Remove")
+        self.material_preview_button.clicked.connect(lambda: self._emit_material_action(self.material_preview_requested))
+        self.material_open_button.clicked.connect(lambda: self._emit_material_action(self.material_open_requested))
+        self.material_use_button.clicked.connect(lambda: self._emit_material_action(self.material_use_requested))
+        self.material_copy_button.clicked.connect(lambda: self._emit_material_action(self.material_copy_reference_requested))
+        self.material_remove_button.clicked.connect(lambda: self._emit_material_action(self.material_remove_requested))
+        actions.addWidget(self.material_preview_button)
+        actions.addWidget(self.material_open_button)
+        actions.addWidget(self.material_use_button)
+        actions.addWidget(self.material_copy_button)
+        actions.addWidget(self.material_remove_button)
+        ask_actions = QHBoxLayout()
+        self.material_ask_input = QLineEdit()
+        self.material_ask_input.setPlaceholderText("Ask AMADEUS about selected material")
+        self.material_ask_button = QPushButton("Ask AMADEUS")
+        self.material_ask_button.clicked.connect(self._emit_material_ask)
+        self.material_refresh_button = QPushButton("Refresh")
+        self.material_refresh_button.clicked.connect(lambda: self.material_open_requested.emit(""))
+        ask_actions.addWidget(self.material_ask_input)
+        ask_actions.addWidget(self.material_ask_button)
+        ask_actions.addWidget(self.material_refresh_button)
 
         self.materials_viewer = QTextEdit()
         self.materials_viewer.setReadOnly(True)
@@ -268,6 +307,10 @@ class RightPanelWidget(QTabWidget):
 
         layout.addWidget(self.materials_title)
         layout.addWidget(self.materials_meta)
+        layout.addWidget(self.materials_selector)
+        layout.addWidget(self.materials_details)
+        layout.addLayout(actions)
+        layout.addLayout(ask_actions)
         layout.addWidget(self.materials_viewer)
         return tab
 
@@ -584,14 +627,59 @@ class RightPanelWidget(QTabWidget):
         self._load_selected_sheet_into_editor(self.sheets_selector.currentIndex())
 
     def _render_materials_panel(self, payload: SidePanelPayload) -> None:
-        """Display the Materials panel foundation or future material content."""
+        """Display Core-provided material rows and optional opened content."""
         metadata = payload.metadata
         material_count = metadata.get("material_count", 0)
         status = metadata.get("status", "ready")
+        rows = metadata.get("materials") if isinstance(metadata.get("materials"), list) else []
+        selected_material_id = str(metadata.get("selected_material_id") or "")
+        self._material_rows_by_id = {str(row.get("id")): row for row in rows if isinstance(row, dict) and row.get("id")}
+        self._loading_materials_panel = True
+        try:
+            self.materials_selector.clear()
+            self.materials_selector.addItem("Select material", "")
+            selected_index = 0
+            for index, row in enumerate(self._material_rows_by_id.values(), start=1):
+                material_id = str(row["id"])
+                self.materials_selector.addItem(f"{row.get('name', 'Untitled')} ({row.get('type', 'material')})", material_id)
+                if material_id == selected_material_id:
+                    selected_index = index
+            self.materials_selector.setCurrentIndex(selected_index)
+        finally:
+            self._loading_materials_panel = False
         self.materials_title.setText(payload.title)
         self.materials_meta.setText(f"Materials: {material_count} • Status: {status}")
         self.materials_viewer.setPlainText(payload.content)
         self.materials_viewer.moveCursor(QTextCursor.MoveOperation.Start)
+        self._load_selected_material(self.materials_selector.currentIndex())
+
+    def _load_selected_material(self, index: int) -> None:
+        """Show selected metadata only; selection is never callable context."""
+        if self._loading_materials_panel:
+            return
+        material_id = self.materials_selector.itemData(index)
+        row = self._material_rows_by_id.get(material_id) if isinstance(material_id, str) else None
+        if row is None:
+            self.materials_details.setText("No material selected.")
+            return
+        metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+        details = ", ".join(f"{key}: {value}" for key, value in metadata.items())
+        self.materials_details.setText(f"id: {row['id']}\ntype: {row.get('type', 'material')}\n{details}")
+
+    def _selected_material_id(self) -> str:
+        material_id = self.materials_selector.currentData()
+        return material_id if isinstance(material_id, str) else ""
+
+    def _emit_material_action(self, signal) -> None:
+        material_id = self._selected_material_id()
+        if material_id:
+            signal.emit(material_id)
+
+    def _emit_material_ask(self) -> None:
+        material_id = self._selected_material_id()
+        question = self.material_ask_input.text().strip()
+        if material_id and question:
+            self.material_ask_requested.emit(material_id, question)
 
     def _load_selected_sheet_into_editor(self, index: int) -> None:
         """Show the selected sheet row in the editor fields."""

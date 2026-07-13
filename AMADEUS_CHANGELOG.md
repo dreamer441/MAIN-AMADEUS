@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-13 - Phase 5: Managed Materials
+
+- Date: 2026-07-13
+- Phase: Phase 5 - Managed Materials
+- Feature or fix: Replaced the Materials placeholder with managed references and export records.
+- What changed: Materials lists managed local text files and existing exports with id/name/type/metadata, supports non-injecting preview/open, explicit one-request callable context, reference copying, and deliberate removal. The GUI provides selection, Preview, Open, Use in Next Message, Ask AMADEUS, Remove, Refresh, and Copy Ref controls.
+- Files/modules affected: `materials_module`, `export_module`, `amadeus_core`, `amadeus_gui`, focused tests, and module documentation.
+- User-visible behavior: Selecting or opening a material never changes chat context. Use applies only to the next sent message; Ask always identifies the selected material explicitly.
+- Architecture notes: GUI receives material rows and content only from Core. Materials composes the Export module's public API; export annotations and TXT/Markdown/JSON compatibility remain unchanged.
+- Tests performed: `py -3 -m compileall .` completed successfully; `py -3 -m unittest discover -s tests -v` passed 23 tests. `python` is unavailable on PATH, so the installed Windows launcher was used.
+- Known limitations: Managed materials currently support UTF-8 text files already placed under `data/materials/`; upload, PDF, image, and search workflows remain future work.
+
 ## 2026-07-13 - Code Viewer Explicit File Context
 
 - Date: 2026-07-13

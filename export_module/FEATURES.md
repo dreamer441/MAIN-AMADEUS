@@ -8,6 +8,7 @@
 - Re-exporting the same chat updates the same export record instead of creating stale duplicates.
 - Labels selected ranges as **real exported chat text**, not metadata.
 - Provides a strict prompt-context contract for exported ranges so AMADEUS should not answer from the wrong/current chat.
+- Exposes known export records to Materials and supports deliberate removal through Materials' public route.
 
 ## Annotation Commands
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -151,6 +152,20 @@ class ChatExportService:
         valid_records = [record for record in records if record is not None]
         valid_records.sort(key=lambda record: record.exported_at, reverse=True)
         return valid_records
+
+    def remove_export(self, export_id: str) -> None:
+        """Remove one known export and its generated folder after explicit selection."""
+        record = next((record for record in self.list_exports() if record.export_id == export_id), None)
+        if record is None:
+            raise ValueError("Unknown export record.")
+        folder = (self.project_root / record.txt_path).resolve().parent
+        if folder.parent != self.export_directory.resolve():
+            raise ValueError("Export record points outside the managed export directory.")
+        if folder.exists():
+            shutil.rmtree(folder)
+        index = self._read_index()
+        index["exports"] = [raw for raw in index.get("exports", []) if raw.get("export_id") != export_id]
+        self._write_index(index)
 
     def resolve_selection(
         self,

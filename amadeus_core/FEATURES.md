@@ -85,6 +85,12 @@ Core routes. It should not become a place for large feature logic. If Core start
 - This prevents `[export][chat][message] prompt` from answering from the active chat instead of the selected exported chat segment.
 - Core still allows saved memory context, but the selected export block becomes the primary source for the request.
 
+## Phase 5 Materials Routing
+
+- Core exposes list, preview, open, reference-copy, removal, and explicit material-message routes.
+- Core delegates every Materials action to `MaterialsService`; the GUI does not read material or export storage.
+- `handle_material_message()` creates callable context for exactly the selected request. Selection and opening alone never inject context.
+
 ## Side Ask / Comments Routing
 
 - Core exposes `handle_side_ask()` for temporary side questions.

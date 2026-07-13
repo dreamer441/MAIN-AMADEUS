@@ -53,6 +53,11 @@ Do not add memory, autonomy, file editing, mind map, or reasoning implementation
 - [ ] Add `[current][message number]` callable context.
 - [ ] Add unified callable context service before Mind Map integration.
 
+## Materials Routing Future
+
+- [ ] Add typed material action results once material metadata expands beyond text files and exports.
+- [ ] Add unified provenance details to traces for explicit material requests.
+
 ## Phase 2 Boundary Follow-up
 
 - [ ] Remove the inactive legacy callable sheet/export helper bodies from Core after the new Annotation Module router has a focused routing test suite.

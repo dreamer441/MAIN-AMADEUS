@@ -71,6 +71,12 @@ The Process Monitor shows real events such as input received, annotation check, 
 - Materials tab can now show exported chat lists and selected numbered ranges returned by Core.
 - No large export text is dumped into the main chat unless Dato explicitly saves/asks later.
 
+## Phase 5 Materials Controls
+
+- Materials lists managed files and export records supplied by Core with id/type/metadata details.
+- Preview and Open are display-only. Use in Next Message is consumed by the next send only; Ask AMADEUS uses the selected reference explicitly.
+- Copy Ref receives a Core-provided stable reference. Remove asks for confirmation, and Refresh reloads Core's payload.
+
 ## Side Ask / Comments UI
 
 - Right panel includes a Side Ask tab.

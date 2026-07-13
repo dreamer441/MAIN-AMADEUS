@@ -6,7 +6,9 @@
 - [x] `[export][chat name]` annotation.
 - [x] `[export][chat name][4-6]` segment injection using message numbers.
 - [x] Strict export context labels so selected export ranges are not confused with metadata.
-- [ ] Add uploaded text/Markdown materials.
+- [x] List/open/preview managed text materials and export records through Core.
+- [x] Explicit one-shot material context, copy references, and deliberate removal.
+- [ ] Add uploaded text/Markdown material creation UI.
 - [ ] Add PDF materials.
 - [ ] Add image materials later.
 - [ ] Add material search/filtering.

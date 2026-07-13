@@ -59,7 +59,7 @@
 ## Sheets / Materials UI Roadmap
 
 - [x] Editable Sheets panel.
-- [x] Materials panel placeholder.
+- [x] Materials list, preview/open, explicit one-shot use, Ask, copy reference, remove, and refresh controls.
 - [ ] Chat export UI.
 - [ ] Select exported message ranges in Materials panel.
 - [ ] Text selection comments from chat messages.

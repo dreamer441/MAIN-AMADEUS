@@ -67,12 +67,12 @@ class AmadeusCore:
         # They are separate from memory because sheets are workspace documents, not always-active facts.
         self.sheet_service = SheetService(self.project_root)
 
-        # Materials is a side-panel foundation for future exports, PDFs, and large references.
-        self.materials_service = MaterialsService(self.project_root)
-
         # Exported chats are the first real Materials objects. They are callable
         # references: visible in the Materials panel and injectable with [export].
         self.export_service = ChatExportService(self.project_root, self.chat_history_store)
+
+        # Materials owns managed references and composes Export's public API.
+        self.materials_service = MaterialsService(self.project_root, self.export_service)
 
         # Side Ask is a temporary secondary Q&A flow. It does not persist into the
         # main chat unless Dato explicitly presses Save to Chat or New Chat.
@@ -903,13 +903,32 @@ class AmadeusCore:
         )
 
     def get_materials_panel_payload(self) -> dict[str, Any]:
-        """Return the current Materials panel payload.
+        """Return material rows without opening or injecting a selected reference."""
+        return self.materials_service.build_panel_payload()
 
-        Materials now shows exported chats when they exist. The older
-        `MaterialsService` placeholder remains available, but exported chats are
-        the first concrete material type and therefore own the current payload.
-        """
-        return self.export_service.build_materials_panel_payload()
+    def list_materials(self) -> list[dict[str, Any]]:
+        """Return material metadata for non-GUI callers through Materials only."""
+        return self.materials_service.list_materials()
+
+    def preview_material(self, material_id: str) -> dict[str, Any]:
+        """Preview one explicitly selected Materials record through its module API."""
+        return self.materials_service.preview_material(material_id)
+
+    def open_material(self, material_id: str) -> dict[str, Any]:
+        """Open one explicitly selected Materials record without injecting it."""
+        return self.materials_service.open_material(material_id)
+
+    def get_material_reference(self, material_id: str) -> str:
+        """Return a selected stable material reference for GUI clipboard actions."""
+        return self.materials_service.material_reference(material_id)
+
+    def remove_material(self, material_id: str) -> None:
+        """Remove one explicitly selected Materials record where supported."""
+        self.materials_service.remove_material(material_id)
+
+    def handle_material_message(self, material_id: str, message: str) -> dict[str, Any]:
+        """Use one selected material as callable context for this one chat request."""
+        return self.handle_user_message(message, callable_context=self.materials_service.build_callable_context(material_id))
 
     def _persist_exchange(self, user_message: str, response: str) -> None:
         """Persist the current user/AMADEUS exchange for later resume."""

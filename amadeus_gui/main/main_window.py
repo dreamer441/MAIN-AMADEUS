@@ -103,15 +103,19 @@ class ChatResponseWorker(QObject):
 
     finished = pyqtSignal(object)
 
-    def __init__(self, core: AmadeusCore, message: str) -> None:
+    def __init__(self, core: AmadeusCore, message: str, material_id: str = "") -> None:
         super().__init__()
         self.core = core
         self.message = message
+        self.material_id = material_id
 
     def run(self) -> None:
         """Call Core and emit a response payload that the GUI can display safely."""
         try:
-            result = self.core.handle_user_message(self.message)
+            result = (
+                self.core.handle_material_message(self.material_id, self.message)
+                if self.material_id else self.core.handle_user_message(self.message)
+            )
             if isinstance(result, str):
                 # Backward safety if Core temporarily returns the older string shape.
                 result = {"response": result, "trace": "Process Monitor did not receive trace data."}
@@ -253,6 +257,7 @@ class AmadeusMainWindow(QMainWindow):
         # Visible message numbers are chat-local. They make conversations easier
         # to read now and give future `[current][number]` annotations a stable UI target.
         self._visible_message_count = 0
+        self._pending_material_id = ""
 
         self.setWindowTitle("AMADEUS")
         self.resize(1250, 720)
@@ -295,6 +300,12 @@ class AmadeusMainWindow(QMainWindow):
         self.right_panel.project_tree_requested.connect(self._refresh_project_tree)
         self.right_panel.project_file_open_requested.connect(self._open_project_file)
         self.right_panel.project_file_ask_requested.connect(self._ask_about_project_file)
+        self.right_panel.material_preview_requested.connect(self._preview_material)
+        self.right_panel.material_open_requested.connect(self._open_material)
+        self.right_panel.material_use_requested.connect(self._use_material_next_message)
+        self.right_panel.material_ask_requested.connect(self._ask_about_material)
+        self.right_panel.material_remove_requested.connect(self._remove_material)
+        self.right_panel.material_copy_reference_requested.connect(self._copy_material_reference)
 
         main_row.addLayout(chat_column, stretch=3)
         main_row.addWidget(self.right_panel, stretch=2)
@@ -384,12 +395,14 @@ class AmadeusMainWindow(QMainWindow):
         self.right_panel.show_waiting_trace()
 
         # GUI talks to Core only. Core decides which module handles the message.
-        self._start_response_worker(message)
+        material_id = self._pending_material_id
+        self._pending_material_id = ""
+        self._start_response_worker(message, material_id=material_id)
 
-    def _start_response_worker(self, message: str) -> None:
+    def _start_response_worker(self, message: str, material_id: str = "") -> None:
         """Start a background worker so Ollama calls do not freeze the window."""
         thread = QThread(self)
-        worker = ChatResponseWorker(self.core, message)
+        worker = ChatResponseWorker(self.core, message, material_id=material_id)
         worker.moveToThread(thread)
 
         # Qt signal wiring: thread starts worker, worker returns result, then thread shuts down cleanly.
@@ -742,6 +755,67 @@ class AmadeusMainWindow(QMainWindow):
             self.right_panel.render_materials_payload(payload, switch_to_tab=switch_to_tab)
         except Exception as error:
             self.status_label.setText(f"Could not refresh materials: {error}")
+
+    def _preview_material(self, material_id: str) -> None:
+        """Preview a selected material through Core without attaching it to chat."""
+        try:
+            self.right_panel.render_materials_payload(self.core.preview_material(material_id), switch_to_tab=True)
+            self.status_label.setText("Material preview opened. It is not attached to chat.")
+        except Exception as error:
+            self.status_label.setText(f"Could not preview material: {error}")
+
+    def _open_material(self, material_id: str) -> None:
+        """Open a selected material through Core without attaching it to chat."""
+        if not material_id:
+            self._refresh_materials_panel(switch_to_tab=True)
+            self.status_label.setText("Materials refreshed.")
+            return
+        try:
+            self.right_panel.render_materials_payload(self.core.open_material(material_id), switch_to_tab=True)
+            self.status_label.setText("Material opened. It is not attached to chat.")
+        except Exception as error:
+            self.status_label.setText(f"Could not open material: {error}")
+
+    def _use_material_next_message(self, material_id: str) -> None:
+        """Arm exactly one upcoming message with the explicitly selected material."""
+        self._pending_material_id = material_id
+        self.status_label.setText("Selected material will be used for the next message only.")
+
+    def _ask_about_material(self, material_id: str, question: str) -> None:
+        """Ask about one selected material with an explicit, one-request context route."""
+        if not question.strip():
+            self.status_label.setText("Ask AMADEUS needs a question.")
+            return
+        self._append_message("User", question)
+        self._set_waiting_for_response(True)
+        self.right_panel.show_waiting_trace()
+        self._start_response_worker(question, material_id=material_id)
+
+    def _copy_material_reference(self, material_id: str) -> None:
+        """Copy a Core-provided material reference without exposing storage to the GUI."""
+        try:
+            from PyQt6.QtWidgets import QApplication
+            QApplication.clipboard().setText(self.core.get_material_reference(material_id))
+            self.status_label.setText("Copied material reference.")
+        except Exception as error:
+            self.status_label.setText(f"Could not copy material reference: {error}")
+
+    def _remove_material(self, material_id: str) -> None:
+        """Request deliberate confirmation before removing the selected material."""
+        confirmation = QMessageBox.question(
+            self, "Remove Material", "Remove this local material or export record? This cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No,
+        )
+        if confirmation != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.core.remove_material(material_id)
+            if self._pending_material_id == material_id:
+                self._pending_material_id = ""
+            self._refresh_materials_panel(switch_to_tab=True)
+            self.status_label.setText("Removed material.")
+        except Exception as error:
+            self.status_label.setText(f"Could not remove material: {error}")
 
     def _save_sheet_from_panel(self, payload: object) -> None:
         """Create or update a sheet using data emitted by the Sheets panel."""
