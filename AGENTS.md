@@ -33,14 +33,15 @@ After every completed implementation task:
 1. Run a basic Python check:
    `python -m compileall .`
 2. If tests exist, run the relevant tests.
-3. Run:
+3. Update `AMADEUS_CHANGELOG.md` with a human-readable entry containing Date, Phase, Feature or fix, What changed, Files/modules affected, User-visible behavior, Architecture notes, Tests performed, and Known limitations.
+4. Run:
    `git status`
    `git diff --stat`
-4. Stage intended changes:
-   `git add -A`
-5. Create a local commit with a clear message:
+5. Review the changed files and stage only intended source, configuration, and documentation paths. Never use `git add -A` blindly.
+6. Run `git diff --cached --stat` to confirm the staged summary contains no runtime data, generated files, caches, secrets, or unrelated changes.
+7. Create a local commit with a clear message:
    `git commit -m "type: short summary"`
-6. Push the current branch:
+8. Push the current branch:
    `git push`
 
 Commit message style:
@@ -73,5 +74,8 @@ Never commit or push:
 - model files
 - cache folders
 - temporary generated junk
+- Runtime data under `data/chats/`, `data/comments/`, `data/memory/`, `data/sheets/`, or `data/exports/`
+
+Completion reports must include a concise change summary, validation results, commit message, and push result.
 
 If `python -m compileall .` fails, do not commit or push. Explain the error first.

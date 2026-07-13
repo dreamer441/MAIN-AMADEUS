@@ -18,3 +18,7 @@ env/
 Thumbs.db
 
 data/chats/
+data/comments/
+data/memory/
+data/sheets/
+data/exports/

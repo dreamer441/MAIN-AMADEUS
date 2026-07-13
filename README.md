@@ -120,6 +120,7 @@ AMADEUS now follows two required development-maintenance rules:
 
 1. When a current or future feature is discussed or implemented, update the affected module docs, especially `FEATURES.md` and `FUTURE_UPDATES.md`.
 2. Code must include useful comments explaining architecture, ownership, data flow, and safety boundaries so Dato can read the project naturally.
+3. Runtime chats, comments, memory, sheets, and exports remain local under `data/` and must never be committed to Git.
 
 The detailed rule file is:
 

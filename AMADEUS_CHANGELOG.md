@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-13 - Phase 1: Repository Safety and Development Baseline
+
+- Date: 2026-07-13
+- Phase: Phase 1 - Repository Safety and Development Baseline
+- Feature or fix: Protected private runtime data from future Git tracking and hardened the AMADEUS Git workflow.
+- What changed: Ignored chats, comments, memory, sheets, and exports; removed previously tracked runtime files from the Git index without deleting local data; replaced automatic blanket staging with reviewed intended-path staging; and standardized changelog requirements.
+- Files/modules affected: `.gitignore`, `AGENTS.md`, `.opencode/commands/push-checkpoint.md`, `README.md`, `AMADEUS_CHANGELOG.md`, and the Git index entries below `data/`.
+- User-visible behavior: Existing local chats, comments, memory, sheets, and exports remain available to AMADEUS but no longer appear as future Git changes.
+- Architecture notes: Storage modules continue to own and create runtime directories. No Core, GUI, or module business logic changed.
+- Tests performed: `py -3 -m compileall .` completed successfully. `python -m compileall .` could not run because `python` is not on `PATH`; the installed Windows Python launcher provided the equivalent validation.
+- Known limitations: Private runtime contents remain in historical commits already pushed before this phase. This phase protects future commits only and does not rewrite history.
+
 ## 2026-07-02 - Identity Module
 - Added AMADEUS Identity Module.
 - Injected global identity into normal chat prompts.
