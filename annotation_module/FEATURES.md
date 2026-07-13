@@ -79,3 +79,12 @@ The Annotation Module detects bracket-style commands such as `[file]` and routes
 - Legacy shorthand `[export][Chat Title][4-6] prompt` still works.
 - Export suggestions now prefer `[open]` and `[use]` so Dato can see whether he is only opening Materials or injecting context into AMADEUS.
 - Export prompt injection is scoped to the selected exported messages and should not fall back to current chat context.
+
+## Phase 3 Annotation Engine V2
+
+- Annotations can appear anywhere in a complete message as independent blocks.
+- `[annotation][arguments] content [end]` closes one block; an omitted `[end]` consumes the rest of the message.
+- Blocks do not nest: bracket text inside a block remains that block's content.
+- The parser returns ordered blocks and only text outside completed blocks as the normal prompt.
+- Existing single leading annotation syntax remains available unchanged.
+- Slash suggestions include `[end]` for closing a block.

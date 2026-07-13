@@ -13,7 +13,7 @@
 
 ## Future GUI Panel Improvements
 
-- Improve suggestion popup keyboard control and positioning.
+- Improve suggestion popup positioning and add mouse-free filtering feedback.
 - Add syntax highlighting for Code Viewer.
 - Add copy button, file path copy button, and line number gutter.
 - Add Diff Viewer tab before any write/edit ability is introduced.

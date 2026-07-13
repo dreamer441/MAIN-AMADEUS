@@ -7,7 +7,7 @@
 - Add exact line-range support once Project File Reader supports it.
 - Add annotation help output such as `[help][file]` or `[annotations]`.
 - Add structured return payloads so Process Monitor can show annotation-specific metadata.
-- Add tests for more natural language inside annotation content.
+- Add tests for more natural language inside annotation content and malformed embedded brackets.
 
 ## Boundary
 
@@ -15,7 +15,8 @@ Annotations should stay deterministic command routes. They should not become a p
 
 ## Future Annotation System Improvements
 
-- Add keyboard navigation for the suggestion popup: arrow keys, Enter to accept, Esc to close.
+- [x] Add keyboard navigation for the suggestion popup: arrow keys, Enter/Tab to accept, Esc to close.
+- Add per-annotation block result types so callable context can preserve structured provenance instead of text alone.
 - Add annotation-specific flows for `[task]`, `[current]`, `[panel]`, and future modules.
 - Add `[current][last_file]` so AMADEUS can refer to the last verified file opened in Code Viewer.
 - Add `[panel]` to inject current visible panel context into the main prompt when Dato explicitly requests it.

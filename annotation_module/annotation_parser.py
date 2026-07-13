@@ -25,8 +25,25 @@ class ParsedAnnotation:
     normalized_arguments: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class AnnotationBlock:
+    """One independently delimited annotation command found in a message."""
+
+    annotation: ParsedAnnotation
+    is_terminated: bool
+
+
+@dataclass(frozen=True)
+class ParsedAnnotationMessage:
+    """Parser-owned split between annotation blocks and ordinary prompt text."""
+
+    blocks: list[AnnotationBlock]
+    normal_prompt: str
+    is_legacy_leading_annotation: bool
+
+
 class AnnotationParser:
-    """Parses leading bracket annotations such as `[file][amadeus_core]`."""
+    """Parses legacy leading annotations and independently delimited blocks."""
 
     def parse(self, message: str) -> ParsedAnnotation | None:
         """Return a parsed annotation, or None when the message is normal chat.
@@ -72,6 +89,58 @@ class AnnotationParser:
             arguments=raw_arguments,
             normalized_arguments=[self._normalize_token(part) for part in raw_arguments],
             content=stripped_message[index:].strip(),
+        )
+
+    def parse_message(self, message: str) -> ParsedAnnotationMessage:
+        """Extract independent annotation blocks without exposing block syntax to Core.
+
+        A block starts at an annotation bracket, ends at its first `[end]`, and does
+        not inspect possible annotations inside its content. Without `[end]`, the
+        block consumes the rest of the message. Text removed from completed blocks
+        is the only text returned as the normal-chat prompt.
+        """
+        blocks: list[AnnotationBlock] = []
+        normal_parts: list[str] = []
+        cursor = 0
+        search_index = 0
+        block_pattern = re.compile(r"\[([^\[\]]+)\]")
+        end_pattern = re.compile(r"\[\s*end\s*\]", re.IGNORECASE)
+
+        while True:
+            opening_match = block_pattern.search(message, search_index)
+            if opening_match is None:
+                break
+
+            if self._normalize_token(opening_match.group(1)) == "end":
+                search_index = opening_match.end()
+                continue
+
+            end_match = end_pattern.search(message, opening_match.end())
+            block_end = end_match.start() if end_match is not None else len(message)
+            annotation = self.parse(message[opening_match.start() : block_end])
+            if annotation is None:
+                search_index = opening_match.end()
+                continue
+
+            normal_parts.append(message[cursor : opening_match.start()])
+            blocks.append(AnnotationBlock(annotation=annotation, is_terminated=end_match is not None))
+            cursor = end_match.end() if end_match is not None else len(message)
+            search_index = cursor
+
+            if end_match is None:
+                break
+
+        normal_parts.append(message[cursor:])
+        normal_prompt = "".join(normal_parts).strip()
+        is_legacy_leading_annotation = (
+            len(blocks) == 1
+            and not blocks[0].is_terminated
+            and not message[: message.find("[")].strip()
+        )
+        return ParsedAnnotationMessage(
+            blocks=blocks,
+            normal_prompt=normal_prompt,
+            is_legacy_leading_annotation=is_legacy_leading_annotation,
         )
 
     def normalize_token(self, token: str) -> str:

@@ -6,6 +6,8 @@ decisions still belong to Core; panel payload/state concepts live in the
 `side_panel` module.
 """
 
+from collections.abc import Callable
+
 from PyQt6.QtCore import QObject, QThread, Qt, pyqtSignal
 from PyQt6.QtGui import QTextCursor
 from PyQt6.QtWidgets import (
@@ -41,8 +43,46 @@ class MessageInput(QTextEdit):
 
     send_requested = pyqtSignal()
 
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._suggestions_visible: Callable[[], bool] = lambda: False
+        self._move_suggestion: Callable[[int], None] = lambda _direction: None
+        self._apply_suggestion: Callable[[], None] = lambda: None
+        self._hide_suggestions: Callable[[], None] = lambda: None
+
+    def configure_suggestion_keys(
+        self,
+        suggestions_visible: Callable[[], bool],
+        move_suggestion: Callable[[int], None],
+        apply_suggestion: Callable[[], None],
+        hide_suggestions: Callable[[], None],
+    ) -> None:
+        """Give the owning window control of its visible suggestion widget."""
+        self._suggestions_visible = suggestions_visible
+        self._move_suggestion = move_suggestion
+        self._apply_suggestion = apply_suggestion
+        self._hide_suggestions = hide_suggestions
+
     def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt uses camelCase names.
         """Send on Enter, keep Shift+Enter as newline."""
+        if self._suggestions_visible():
+            if event.key() == Qt.Key.Key_Up:
+                self._move_suggestion(-1)
+                event.accept()
+                return
+            if event.key() == Qt.Key.Key_Down:
+                self._move_suggestion(1)
+                event.accept()
+                return
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Tab):
+                self._apply_suggestion()
+                event.accept()
+                return
+            if event.key() == Qt.Key.Key_Escape:
+                self._hide_suggestions()
+                event.accept()
+                return
+
         is_enter = event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
         has_shift = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
         if is_enter and not has_shift:
@@ -247,6 +287,12 @@ class AmadeusMainWindow(QMainWindow):
         self.message_input.setMaximumHeight(130)
         self.message_input.send_requested.connect(self.send_message)
         self.message_input.textChanged.connect(self._update_annotation_suggestions)
+        self.message_input.configure_suggestion_keys(
+            self.annotation_suggestion_box.isVisible,
+            self._move_annotation_suggestion,
+            self._apply_selected_annotation_suggestion,
+            self.annotation_suggestion_box.hide,
+        )
 
         self.send_button = QPushButton("Send")
         self.send_button.clicked.connect(self.send_message)
@@ -472,7 +518,22 @@ class AmadeusMainWindow(QMainWindow):
             item.setData(Qt.ItemDataRole.UserRole, insert_text)
             self.annotation_suggestion_box.addItem(item)
 
+        self.annotation_suggestion_box.setCurrentRow(0)
         self.annotation_suggestion_box.show()
+
+    def _move_annotation_suggestion(self, direction: int) -> None:
+        """Move the visible suggestion selection without moving the input cursor."""
+        count = self.annotation_suggestion_box.count()
+        if count == 0:
+            return
+        current_row = self.annotation_suggestion_box.currentRow()
+        self.annotation_suggestion_box.setCurrentRow((max(current_row, 0) + direction) % count)
+
+    def _apply_selected_annotation_suggestion(self) -> None:
+        """Apply the current keyboard-selected suggestion when one exists."""
+        item = self.annotation_suggestion_box.currentItem()
+        if item is not None:
+            self._apply_annotation_suggestion(item)
 
     def _apply_annotation_suggestion(self, item: QListWidgetItem) -> None:
         """Insert a selected annotation suggestion into the input box."""

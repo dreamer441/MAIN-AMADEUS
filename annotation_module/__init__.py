@@ -2,7 +2,7 @@
 
 from annotation_module.annotation_context import AnnotationContext
 from annotation_module.callable_context_router import CallableContextRouter
-from annotation_module.annotation_parser import AnnotationParser, ParsedAnnotation
+from annotation_module.annotation_parser import AnnotationBlock, AnnotationParser, ParsedAnnotation, ParsedAnnotationMessage
 from annotation_module.annotation_registry import AnnotationHandler, AnnotationRegistry
 from annotation_module.annotation_result import AnnotationResult
 from annotation_module.annotation_suggestions import AnnotationSuggestion, AnnotationSuggestionService
@@ -11,10 +11,12 @@ __all__ = [
     "AnnotationContext",
     "CallableContextRouter",
     "AnnotationHandler",
+    "AnnotationBlock",
     "AnnotationParser",
     "AnnotationRegistry",
     "AnnotationResult",
     "AnnotationSuggestion",
     "AnnotationSuggestionService",
     "ParsedAnnotation",
+    "ParsedAnnotationMessage",
 ]

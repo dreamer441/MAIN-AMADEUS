@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-13 - Phase 3: Annotation Engine V2
+
+- Date: 2026-07-13
+- Phase: Phase 3 - Annotation Engine V2
+- Feature or fix: Added independent annotation blocks anywhere in a complete message.
+- What changed: The Annotation Module extracts ordered `[annotation] ... [end]` blocks, Core executes deterministic results as callable context for outside-block prompt text, and the GUI supports keyboard suggestion selection plus an `[end]` suggestion.
+- Files/modules affected: `annotation_module`, `amadeus_core`, `amadeus_gui`, focused `tests`, and Phase 3 documentation.
+- User-visible behavior: Users can combine multiple annotation blocks with ordinary prompt text; only ordinary text outside blocks is sent as the normal chat request. Up/Down, Enter/Tab, and Escape control visible suggestions.
+- Architecture notes: Block grammar remains entirely parser-owned. Core consumes structured parser output and retains the legacy unclosed leading annotation route for compatibility.
+- Tests performed: `py -3 -m compileall .` completed successfully; `py -3 -m unittest discover -s tests -v` passed 13 focused parser, Core, and offscreen GUI keyboard tests.
+- Known limitations: Multiple blocks can return only the latest side-panel payload, and block results currently enter callable context as labelled text rather than typed provenance.
+
 ## 2026-07-13 - Phase 2: Lightweight Core and GUI Separation
 
 - Date: 2026-07-13

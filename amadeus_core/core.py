@@ -11,7 +11,7 @@ GUI -> Core -> Annotation check OR Chat route -> Context Builder / Identity -> C
 from pathlib import Path
 from typing import Any
 
-from annotation_module import AnnotationContext, AnnotationParser, AnnotationRegistry, AnnotationResult, AnnotationSuggestionService, CallableContextRouter, ParsedAnnotation
+from annotation_module import AnnotationContext, AnnotationParser, AnnotationRegistry, AnnotationResult, AnnotationSuggestionService, CallableContextRouter, ParsedAnnotation, ParsedAnnotationMessage
 from annotation_module.annotations import ExportAnnotation, FileAnnotation, IdentityAnnotation, MemoryAnnotation, SheetAnnotation
 from amadeus_chat import AmadeusChatModule
 from amadeus_core.module_registry import ModuleRegistry
@@ -187,13 +187,17 @@ class AmadeusCore:
             return self._build_response_payload(response, trace_logger)
 
         try:
-            # Annotation detection happens before normal chat so structured commands like [file]
-            # do not get treated as ordinary text for the LLM.
+            # Annotation Module owns message-level block extraction. Core only consumes
+            # its structured result and never searches for `[end]` syntax itself.
             trace_logger.add_event(
                 "annotation",
                 "Annotation Check",
-                "Checking if message starts with a registered annotation pattern.",
+                "Checking for parser-recognized annotation blocks.",
             )
+            parsed_message = self.annotation_parser.parse_message(message)
+            if parsed_message.blocks and not parsed_message.is_legacy_leading_annotation:
+                return self._handle_annotation_blocks(parsed_message, clean_message, trace_logger)
+
             parsed_annotation = self.annotation_parser.parse(message)
 
             if parsed_annotation is not None:
@@ -679,6 +683,70 @@ class AmadeusCore:
             return self.annotation_suggestion_service.get_suggestions(current_input)
         except Exception:
             return []
+
+    def _handle_annotation_blocks(
+        self,
+        parsed_message: ParsedAnnotationMessage,
+        original_message: str,
+        trace_logger: TraceLogger,
+    ) -> dict[str, Any]:
+        """Execute parser-extracted blocks and use their results as one callable context.
+
+        This is deliberately limited to parser output and registry calls. Annotation
+        grammar belongs to `annotation_module`; Core coordinates deterministic module
+        results with the one remaining normal-chat prompt.
+        """
+        responses: list[str] = []
+        side_panel: dict[str, Any] | None = None
+        for block in parsed_message.blocks:
+            annotation = block.annotation
+            trace_logger.add_event(
+                "annotation",
+                "Annotation Block Detected",
+                f"Executing annotation block: [{annotation.annotation_name}].",
+                level="success",
+            )
+            annotation_output = self.annotation_registry.handle(annotation, self.annotation_context)
+            response, block_panel = self._unpack_annotation_output(annotation_output)
+            responses.append(response)
+            if block_panel is not None:
+                side_panel = block_panel
+
+        if not parsed_message.normal_prompt:
+            response = "\n\n---\n\n".join(responses)
+            self._persist_exchange(original_message, response)
+            trace_logger.add_event("output", "Output Ready", "Annotation block results returned without a chat prompt.", level="success")
+            return self._build_response_payload(response, trace_logger, side_panel=side_panel)
+
+        chat_module = self.module_registry.get("chat")
+        if chat_module is None:
+            response = "AMADEUS error: chat module is not registered."
+            trace_logger.add_event("error", "Routing Error", "Core could not find the registered chat module.", level="error")
+            return self._build_response_payload(response, trace_logger, side_panel=side_panel)
+
+        normal_prompt = parsed_message.normal_prompt
+        callable_context = "Deterministic annotation results:\n\n" + "\n\n---\n\n".join(responses)
+        context_bundle = self.context_builder.build_for_message(normal_prompt)
+        trace_logger.add_event(
+            "routing",
+            "Routing Decision",
+            "Annotation blocks resolved. Routing only outside-block text to chat with deterministic callable context.",
+        )
+        response = chat_module.handle_message(  # type: ignore[attr-defined]
+            normal_prompt,
+            recent_conversation=context_bundle.recent_conversation,
+            project_context=context_bundle.project_context,
+            memory_context=context_bundle.memory_context,
+            chat_workspace_context=context_bundle.chat_workspace_context,
+            callable_context=callable_context,
+            identity_prompt=self.identity_prompt_builder.build_for_chat(
+                project_context_active=context_bundle.project_context_active,
+            ),
+            trace_logger=trace_logger,
+        )
+        self._persist_exchange(original_message, response)
+        trace_logger.add_event("output", "Output Ready", "Response returned with annotation block context.", level="success")
+        return self._build_response_payload(response, trace_logger, side_panel=side_panel)
 
     def _unpack_annotation_output(self, annotation_output: object) -> tuple[str, dict[str, Any] | None]:
         """Normalize annotation handler output into chat text plus optional panel data."""

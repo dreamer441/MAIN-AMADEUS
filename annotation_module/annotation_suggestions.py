@@ -100,6 +100,7 @@ class AnnotationSuggestionService:
             AnnotationSuggestion("[export]", "[export]", "Export/open chat references in Materials"),
             AnnotationSuggestion("[memory]", "[memory]", "Save/list explicit AMADEUS memory"),
             AnnotationSuggestion("[identity]", "[identity]", "Inspect AMADEUS identity charter/prompt"),
+            AnnotationSuggestion("[end]", "[end]", "Close the current annotation block"),
         ]
         if not query:
             return suggestions

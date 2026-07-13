@@ -93,3 +93,8 @@ The Process Monitor shows real events such as input received, annotation check, 
 - `amadeus_gui.side` owns the tabbed right-side workspace panel and its Qt rendering.
 - `amadeus_gui` keeps `AmadeusMainWindow` as the stable public GUI import used by application startup.
 - No visible layout, controls, or panel behavior changed during the package move.
+
+## Phase 3 Annotation Suggestions
+
+- The visible annotation suggestion list supports Up/Down selection, Enter or Tab insertion, and Escape to hide it.
+- When the suggestion list is closed, the input keeps its normal Enter-send and Shift+Enter-newline behavior.

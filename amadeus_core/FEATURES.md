@@ -97,3 +97,11 @@ Core routes. It should not become a place for large feature logic. If Core start
 - Core delegates callable `[sheet]` and `[export]` prompt handling to `annotation_module.CallableContextRouter`.
 - The Annotation Module now resolves the selected stored object, builds callable context, and preserves the export scope lock through module public APIs.
 - Core supplies routing callbacks, trace delivery, and persistence coordination without implementing sheet/export selection details in the active request path.
+
+## Phase 3 Annotation Block Routing
+
+- Core consumes parser-owned annotation blocks without scanning for block syntax.
+- It executes blocks in source order through the annotation registry.
+- With text outside blocks, Core sends only that text to Chat and injects combined deterministic block results as callable context.
+- With block-only input, Core returns the deterministic results together without calling the LLM.
+- An unclosed single leading annotation retains the established legacy callable sheet/export route.
