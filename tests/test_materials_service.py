@@ -5,9 +5,9 @@ import unittest
 from pathlib import Path
 
 from amadeus_core.core import AmadeusCore
-from export_module import ExportSelection, ExportedChatRecord
+from export_module import ChatExportService, ExportSelection, ExportedChatRecord
 from materials_module import MaterialsService
-from storage import ChatHistoryMessage
+from storage import ChatHistoryMessage, ChatMetadata
 
 
 class _FakeExports:
@@ -18,6 +18,8 @@ class _FakeExports:
             txt_path="data/exports/export_chat_1/Saved_Chat.txt",
             md_path="data/exports/export_chat_1/Saved_Chat.md",
             json_path="data/exports/export_chat_1/Saved_Chat.json",
+            first_message_number=4,
+            last_message_number=18,
         )
         self.removed: list[str] = []
 
@@ -40,6 +42,57 @@ class _FakeExports:
         self.removed.append(export_id)
 
 
+class _ExportHistoryStore:
+    """Minimal history API that exercises real export metadata persistence."""
+
+    def get_chat(self, chat_id: str) -> ChatMetadata | None:
+        if chat_id != "chat_1":
+            return None
+        return ChatMetadata("chat_1", "Saved Chat", "2026-07-13T00:00:00+00:00", "2026-07-13T00:00:00+00:00")
+
+    def get_current_chat_id(self) -> str:
+        return "chat_1"
+
+    def load_messages(self, limit: int, chat_id: str) -> list[ChatHistoryMessage]:
+        self.last_load = (limit, chat_id)
+        return [
+            ChatHistoryMessage("User", "Third", "2026-07-13T00:00:00+00:00", 3),
+            ChatHistoryMessage("AMADEUS", "First", "2026-07-13T00:00:01+00:00", 1),
+            ChatHistoryMessage("User", "Eighth", "2026-07-13T00:00:02+00:00", 8),
+        ]
+
+
+class ExportRecordTests(unittest.TestCase):
+    """Verify new bounds are index-compatible and derived from real exports."""
+
+    def test_legacy_index_record_keeps_missing_bounds_as_none(self) -> None:
+        record = ExportedChatRecord.from_raw({
+            "export_id": "export_chat_1",
+            "chat_id": "chat_1",
+            "chat_title": "Saved Chat",
+            "exported_at": "2026-07-13T00:00:00+00:00",
+            "message_count": 1,
+            "txt_path": "data/exports/export_chat_1/Saved_Chat.txt",
+            "md_path": "data/exports/export_chat_1/Saved_Chat.md",
+            "json_path": "data/exports/export_chat_1/Saved_Chat.json",
+        })
+
+        self.assertIsNotNone(record)
+        self.assertIsNone(record.first_message_number)
+        self.assertIsNone(record.last_message_number)
+
+    def test_real_export_persists_sorted_message_bounds_without_changing_text_format(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            service = ChatExportService(root, _ExportHistoryStore())
+
+            record = service.export_chat("chat_1")
+
+            self.assertEqual((1, 8), (record.first_message_number, record.last_message_number))
+            self.assertEqual(record.to_raw(), service.list_exports()[0].to_raw())
+            self.assertIn("[3] User: Third", (root / record.txt_path).read_text(encoding="utf-8"))
+
+
 class MaterialsServiceTests(unittest.TestCase):
     """Verify managed files and exports stay explicit and safely bounded."""
 
@@ -59,6 +112,31 @@ class MaterialsServiceTests(unittest.TestCase):
         self.assertEqual("managed_file", rows[0]["type"])
         self.assertEqual("chat_export", rows[1]["type"])
         self.assertEqual("notes.txt", rows[0]["metadata"]["relative_path"])
+
+    def test_export_row_uses_clean_date_and_message_range(self) -> None:
+        row = next(row for row in self.service.list_materials() if row["type"] == "chat_export")
+
+        self.assertEqual("13 July 2026", row["display_date"])
+        self.assertEqual("Messages 4-18", row["display_range"])
+
+    def test_export_copy_text_is_the_txt_path(self) -> None:
+        self.assertEqual(
+            "data/exports/export_chat_1/Saved_Chat.txt",
+            self.service.material_copy_text("export:export_chat_1"),
+        )
+
+    def test_legacy_export_row_uses_message_count_when_bounds_are_missing(self) -> None:
+        self.exports.record = ExportedChatRecord(
+            export_id="export_chat_1", chat_id="chat_1", chat_title="Saved Chat",
+            exported_at="2026-07-13T00:00:00+00:00", message_count=1,
+            txt_path="data/exports/export_chat_1/Saved_Chat.txt",
+            md_path="data/exports/export_chat_1/Saved_Chat.md",
+            json_path="data/exports/export_chat_1/Saved_Chat.json",
+        )
+
+        row = next(row for row in self.service.list_materials() if row["type"] == "chat_export")
+
+        self.assertEqual("Messages 1", row["display_range"])
 
     def test_open_and_preview_do_not_require_or_create_callable_context(self) -> None:
         preview = self.service.preview_material("material:notes.txt")
@@ -91,6 +169,12 @@ class MaterialsCoreRouteTests(unittest.TestCase):
 
         self.assertEqual({"response": "Question"}, result)
         self.assertEqual(["context:material:notes.txt"], contexts)
+
+    def test_get_material_copy_text_delegates_through_materials(self) -> None:
+        core = object.__new__(AmadeusCore)
+        core.materials_service = type("Materials", (), {"material_copy_text": lambda _self, material_id: f"copy:{material_id}"})()
+
+        self.assertEqual("copy:export:export_chat_1", core.get_material_copy_text("export:export_chat_1"))
 
 
 if __name__ == "__main__":

@@ -685,9 +685,29 @@ class RightPanelWidget(QTabWidget):
         if row is None:
             self.materials_details.setText("No material selected.")
             return
+        if row.get("type") == "chat_export":
+            self.material_open_button.setText("Open")
+            self.material_copy_button.setText("Copy Path")
+            self.material_remove_button.setText("Delete")
+            self.material_preview_button.setDisabled(True)
+            self.material_ask_input.setDisabled(True)
+            self.material_ask_button.setDisabled(True)
+            self.materials_details.setText(f"{row['display_date']}\n{row['display_range']}")
+            return
+        self.material_open_button.setText("Open")
+        self.material_copy_button.setText("Copy Ref")
+        self.material_remove_button.setText("Remove")
+        self.material_preview_button.setDisabled(False)
+        self.material_ask_input.setDisabled(False)
+        self.material_ask_button.setDisabled(False)
         metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
         details = ", ".join(f"{key}: {value}" for key, value in metadata.items())
         self.materials_details.setText(f"id: {row['id']}\ntype: {row.get('type', 'material')}\n{details}")
+
+    def material_type(self, material_id: str) -> str:
+        """Return the selected row type so MainWindow can label confirmations."""
+        row = self._material_rows_by_id.get(material_id)
+        return str(row.get("type") or "") if row is not None else ""
 
     def _selected_material_id(self) -> str:
         material_id = self.materials_selector.currentData()

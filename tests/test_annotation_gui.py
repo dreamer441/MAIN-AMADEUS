@@ -79,6 +79,43 @@ class CodeViewerLineNumberTests(unittest.TestCase):
         self.assertEqual("1: first\n2: \n3: third", panel._line_labelled_code("first\n\nthird\n"))
 
 
+class MaterialsPanelTests(unittest.TestCase):
+    """Verify exported chats have their own display-only controls and details."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.application = QApplication.instance() or QApplication([])
+
+    def test_export_rows_disable_managed_file_actions_and_show_clean_details(self) -> None:
+        panel = RightPanelWidget("Ready")
+
+        panel.render_materials_payload({
+            "type": "materials",
+            "title": "AMADEUS Materials",
+            "content": "",
+            "metadata": {
+                "material_count": 1,
+                "materials": [{
+                    "id": "export:export_chat_1",
+                    "name": "Saved Chat",
+                    "type": "chat_export",
+                    "display_date": "13 July 2026",
+                    "display_range": "Messages 4-18",
+                    "metadata": {"txt_path": "data/exports/export_chat_1/Saved_Chat.txt"},
+                }],
+                "selected_material_id": "export:export_chat_1",
+            },
+        })
+
+        self.assertEqual("Copy Path", panel.material_copy_button.text())
+        self.assertEqual("Delete", panel.material_remove_button.text())
+        self.assertFalse(panel.material_preview_button.isEnabled())
+        self.assertFalse(panel.material_ask_button.isEnabled())
+        self.assertTrue(panel.material_open_button.isEnabled())
+        self.assertTrue(panel.material_use_button.isEnabled())
+        self.assertEqual("13 July 2026\nMessages 4-18", panel.materials_details.text())
+
+
 class CommentsPanelTests(unittest.TestCase):
     """Verify the Comments tab exposes actions for the selected comment."""
 

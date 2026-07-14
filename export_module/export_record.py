@@ -24,6 +24,8 @@ class ExportedChatRecord:
     txt_path: str
     md_path: str
     json_path: str
+    first_message_number: int | None = None
+    last_message_number: int | None = None
 
     @classmethod
     def from_raw(cls, raw: Any) -> "ExportedChatRecord | None":
@@ -44,6 +46,12 @@ class ExportedChatRecord:
         message_count = raw.get("message_count")
         if not isinstance(message_count, int):
             message_count = 0
+        first_message_number = raw.get("first_message_number")
+        if not isinstance(first_message_number, int):
+            first_message_number = None
+        last_message_number = raw.get("last_message_number")
+        if not isinstance(last_message_number, int):
+            last_message_number = None
         return cls(
             export_id=raw["export_id"],
             chat_id=raw["chat_id"],
@@ -53,6 +61,8 @@ class ExportedChatRecord:
             txt_path=raw["txt_path"],
             md_path=raw["md_path"],
             json_path=raw["json_path"],
+            first_message_number=first_message_number,
+            last_message_number=last_message_number,
         )
 
     def to_raw(self) -> dict[str, Any]:
@@ -66,4 +76,6 @@ class ExportedChatRecord:
             "txt_path": self.txt_path,
             "md_path": self.md_path,
             "json_path": self.json_path,
+            "first_message_number": self.first_message_number,
+            "last_message_number": self.last_message_number,
         }

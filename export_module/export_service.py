@@ -131,6 +131,7 @@ class ChatExportService:
         txt_path.write_text(self.format_txt(metadata, messages, exported_at), encoding="utf-8")
         md_path.write_text(self.format_md(metadata, messages, exported_at), encoding="utf-8")
         json_path.write_text(self.format_json(metadata, messages, exported_at), encoding="utf-8")
+        message_numbers = sorted(message.message_number for message in messages)
 
         record = ExportedChatRecord(
             export_id=export_id,
@@ -141,6 +142,8 @@ class ChatExportService:
             txt_path=str(txt_path.relative_to(self.project_root)),
             md_path=str(md_path.relative_to(self.project_root)),
             json_path=str(json_path.relative_to(self.project_root)),
+            first_message_number=message_numbers[0] if message_numbers else None,
+            last_message_number=message_numbers[-1] if message_numbers else None,
         )
         self._upsert_record(record)
         return record

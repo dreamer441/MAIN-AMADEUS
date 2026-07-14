@@ -930,6 +930,10 @@ class AmadeusCore:
         """Return a selected stable material reference for GUI clipboard actions."""
         return self.materials_service.material_reference(material_id)
 
+    def get_material_copy_text(self, material_id: str) -> str:
+        """Return the selected material's Core-owned clipboard text."""
+        return self.materials_service.material_copy_text(material_id)
+
     def remove_material(self, material_id: str) -> None:
         """Remove one explicitly selected Materials record where supported."""
         self.materials_service.remove_material(material_id)

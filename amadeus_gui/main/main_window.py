@@ -796,18 +796,25 @@ class AmadeusMainWindow(QMainWindow):
         self._start_response_worker(question, material_id=material_id)
 
     def _copy_material_reference(self, material_id: str) -> None:
-        """Copy a Core-provided material reference without exposing storage to the GUI."""
+        """Copy a Core-provided path or reference without exposing storage to the GUI."""
         try:
             from PyQt6.QtWidgets import QApplication
-            QApplication.clipboard().setText(self.core.get_material_reference(material_id))
-            self.status_label.setText("Copied material reference.")
+            QApplication.clipboard().setText(self.core.get_material_copy_text(material_id))
+            if self.right_panel.material_type(material_id) == "chat_export":
+                self.status_label.setText("Copied export path.")
+            else:
+                self.status_label.setText("Copied material reference.")
         except Exception as error:
-            self.status_label.setText(f"Could not copy material reference: {error}")
+            self.status_label.setText(f"Could not copy material: {error}")
 
     def _remove_material(self, material_id: str) -> None:
         """Request deliberate confirmation before removing the selected material."""
+        is_export = self.right_panel.material_type(material_id) == "chat_export"
         confirmation = QMessageBox.question(
-            self, "Remove Material", "Remove this local material or export record? This cannot be undone.",
+            self,
+            "Delete Export" if is_export else "Remove Material",
+            "Delete this exported chat and its generated files? This cannot be undone."
+            if is_export else "Remove this local material? This cannot be undone.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No,
         )
         if confirmation != QMessageBox.StandardButton.Yes:
@@ -817,7 +824,7 @@ class AmadeusMainWindow(QMainWindow):
             if self._pending_material_id == material_id:
                 self._pending_material_id = ""
             self._refresh_materials_panel(switch_to_tab=True)
-            self.status_label.setText("Removed material.")
+            self.status_label.setText("Deleted export." if is_export else "Removed material.")
         except Exception as error:
             self.status_label.setText(f"Could not remove material: {error}")
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -35,10 +36,18 @@ class MaterialsService:
                     "removable": True,
                 })
         for record in self.export_service.list_exports():
+            display_date = self._export_display_date(record.exported_at)
+            display_range = (
+                f"Messages {record.first_message_number}-{record.last_message_number}"
+                if record.first_message_number is not None and record.last_message_number is not None
+                else f"Messages {record.message_count}"
+            )
             rows.append({
                 "id": f"export:{record.export_id}",
                 "name": record.chat_title,
                 "type": "chat_export",
+                "display_date": display_date,
+                "display_range": display_range,
                 "metadata": {
                     "export_id": record.export_id,
                     "chat_id": record.chat_id,
@@ -47,6 +56,8 @@ class MaterialsService:
                     "txt_path": record.txt_path,
                     "md_path": record.md_path,
                     "json_path": record.json_path,
+                    "first_message_number": record.first_message_number,
+                    "last_message_number": record.last_message_number,
                 },
                 "removable": True,
             })
@@ -113,6 +124,15 @@ class MaterialsService:
             raise ValueError("Unknown material reference.")
         return material_id
 
+    def material_copy_text(self, material_id: str) -> str:
+        """Return an export's TXT path or a managed material's stable reference."""
+        item = self._find_material(material_id)
+        if item is None:
+            raise ValueError("Unknown material reference.")
+        if item["type"] == "chat_export":
+            return str(item["metadata"]["txt_path"])
+        return material_id
+
     def _build_content_payload(self, material_id: str, preview: bool) -> dict[str, Any]:
         item = self._find_material(material_id)
         if item is None:
@@ -154,6 +174,15 @@ class MaterialsService:
             return path.read_text(encoding="utf-8")
         except UnicodeDecodeError as error:
             raise ValueError("This managed material is not UTF-8 text and cannot be opened yet.") from error
+
+    @staticmethod
+    def _export_display_date(exported_at: str) -> str:
+        """Format an ISO export timestamp without Windows-specific strftime directives."""
+        try:
+            value = datetime.fromisoformat(exported_at)
+        except ValueError:
+            return exported_at
+        return f"{value.day} {value.strftime('%B %Y')}"
 
     @staticmethod
     def _is_within(path: Path, directory: Path) -> bool:
