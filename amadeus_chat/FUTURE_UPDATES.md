@@ -6,6 +6,7 @@
 - Reasoning-profile aware prompts.
 - Message-level metadata for future memory and reflection.
 - Optional prompt preview/debug mode through Process Monitor, without exposing hidden reasoning.
+- Add safe LLM latency and retry lifecycle metadata without recording prompts or responses.
 - Better separation of system prompt, identity prompt, history prompt, project context, and latest user request.
 
 ## Future Chat Context Improvements

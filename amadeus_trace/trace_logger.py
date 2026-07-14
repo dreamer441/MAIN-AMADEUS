@@ -59,6 +59,24 @@ class TraceLogger:
             # Trace is diagnostic only. AMADEUS must still answer if monitoring fails.
             return
 
+    def complete_run(self, *, title: str, summary: str) -> None:
+        """Finish the current lifecycle without exposing the emitter to callers."""
+        try:
+            if self.current_session is None:
+                self.start_session()
+            self.emitter.complete_run(title=title, summary=summary)
+        except Exception:
+            return
+
+    def fail_run(self, *, title: str, summary: str) -> None:
+        """Record a safe failed terminal lifecycle event."""
+        try:
+            if self.current_session is None:
+                self.start_session()
+            self.emitter.fail_run(title=title, summary=summary)
+        except Exception:
+            return
+
     def get_trace_text(self, mode: str = "compact") -> str:
         """Return the latest session as readable monitor text."""
         try:

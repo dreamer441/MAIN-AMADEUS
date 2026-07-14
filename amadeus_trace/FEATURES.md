@@ -18,13 +18,14 @@
 - Structured `TraceEvent` records with category, title, message, timestamp, and level.
 - Compact and detailed text rendering.
 - Safe `TraceLogger` wrapper so monitoring failures do not break chat.
+- `TraceLogger` exposes safe `complete_run()` and `fail_run()` lifecycle terminals to its module callers.
 - GUI-ready structured event list for future filters and exports.
 - Designed to show real execution events only, not hidden internal thoughts.
 - Shows deterministic project file inspection route events when Core bypasses the LLM for exact file/folder questions.
 - Comments now explicitly mark the safety boundary between real execution trace and fake/hidden reasoning.
 
-The shared-event backend is a foundation only. Core and feature-module lifecycle
-emission plus the live GUI bridge are intentionally separate follow-up tasks.
+Normal active-chat lifecycle emission is integrated at Core, Context Builder, and
+Chat boundaries. Live GUI forwarding remains a separate follow-up task.
 
 ## Current Event Categories
 

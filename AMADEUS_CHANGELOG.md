@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-14 - Shared Process Events: Active Chat Lifecycle
+
+- Date: 2026-07-14
+- Phase: Shared Process Events - Task 2
+- Feature or fix: Added genuine normal active-chat lifecycle events.
+- What changed: Core now reports receipt, route, and terminal result/failure; Context Builder reports context start and safe selected-type completion; Chat reports LLM request and response boundaries. `TraceLogger` now provides safe terminal facade methods.
+- Files/modules affected: `amadeus_core`, `context_builder`, `amadeus_chat`, `amadeus_trace`, focused lifecycle tests, module documentation, and Task 2 report.
+- User-visible behavior: Normal chat returns one ordered Process Monitor lifecycle without prompt bodies, context values, or LLM response text.
+- Architecture notes: Lifecycle ownership remains at the actual Core, Context Builder, and Chat execution boundaries; no GUI integration was added.
+- Tests performed: Recorded in `.superpowers/sdd/shared-events-task-2.md`.
+- Known limitations: Events are returned with the completed Core response; live GUI forwarding is Task 3.
+
 ## 2026-07-14 - Shared Process Events: Legacy Empty Session Fix
 
 - Date: 2026-07-14

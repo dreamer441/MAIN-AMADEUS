@@ -14,6 +14,7 @@ AMADEUS Core is the lightweight coordinator. It routes user messages to the corr
 - Exposes multi-chat methods for GUI: list chats, create chat, delete chat, switch chat, load active chat history.
 - Keeps the active chat inside Storage, so Context Builder uses only the selected chat's history.
 - Creates one Process Monitor trace session per user message.
+- Owns normal-chat request receipt, route selection, and terminal lifecycle events.
 - Returns response text, trace text, and optional side-panel payloads to the GUI.
 - Routes exact file access through annotations, especially `[file]`; normal chat remains summary/explanation mode.
 
@@ -26,6 +27,11 @@ AMADEUS Core is the lightweight coordinator. It routes user messages to the corr
 5. Context Builder selects active-chat history and safe project overview context
 6. Chat Module calls the LLM client
 7. Output returned to GUI
+
+## Shared Process Events
+
+- Normal active-chat events are one ordered lifecycle: request receipt, route, Context Builder start/ready, LLM request/response, and Core terminal result.
+- Core records only its own request-routing and terminal boundaries; it does not expose prompt or selected context values in trace metadata.
 
 ## Important boundary
 

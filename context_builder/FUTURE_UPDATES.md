@@ -5,6 +5,7 @@
 - Add token-aware context limits.
 - Add module-specific context packs.
 - Add source labels for each injected context section.
+- Add safe aggregate context selection metrics only after a privacy review.
 - Add stronger detection for when project context is useful.
 - Add per-chat instruction/profile context after the multi-chat foundation stabilizes.
 - Add future integration with memory and relevance graph once those modules are stable.

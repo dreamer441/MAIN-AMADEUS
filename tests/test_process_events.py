@@ -3,6 +3,7 @@
 import unittest
 
 from amadeus_trace import BrainRole, ProcessEventEmitter, ProcessEventStatus, ProcessEventType, TraceLogger
+from amadeus_chat.chat_module import AmadeusChatModule
 
 
 class ProcessEventEmitterTests(unittest.TestCase):
@@ -181,6 +182,28 @@ class TraceLoggerCompatibilityTests(unittest.TestCase):
         self.assertEqual(["file", "llm", "annotation", "module", "routing"], [event["category"] for event in events])
         for category in ("file", "llm", "annotation", "module", "routing"):
             self.assertIn(f"Category: {category}", detailed_text)
+
+    def test_terminal_lifecycle_calls_are_available_through_trace_logger(self) -> None:
+        logger = TraceLogger()
+        logger.start_session()
+
+        logger.complete_run(title="Response Returned", summary="Response returned to the caller.")
+
+        self.assertEqual("completed", logger.get_trace_events()[-1]["status"])
+
+
+class ChatLifecycleTests(unittest.TestCase):
+    """Verify Chat reports LLM boundaries without publishing prompt content."""
+
+    def test_chat_emits_llm_request_and_response_boundaries(self) -> None:
+        logger = TraceLogger()
+        logger.start_session()
+        chat = AmadeusChatModule(llm_client=type("Client", (), {"generate": lambda *_args, **_kwargs: "ok"})())
+
+        self.assertEqual("ok", chat.handle_message("secret prompt", trace_logger=logger))
+
+        self.assertEqual(["LLM Request", "LLM Response"], [event["title"] for event in logger.get_trace_events()])
+        self.assertNotIn("secret prompt", str(logger.get_trace_events()))
 
 
 if __name__ == "__main__":

@@ -58,13 +58,6 @@ class AmadeusChatModule:
         if not clean_message:
             return "AMADEUS needs a message before she can respond."
 
-        self._trace(
-            trace_logger,
-            "module",
-            "Chat Module",
-            "Chat module is building the prompt for the LLM client.",
-        )
-
         # Prompt construction is kept in one method so future reasoning profiles can swap templates
         # without changing the LLM client or Core routing code.
         prompt = self._build_prompt(
@@ -81,8 +74,8 @@ class AmadeusChatModule:
             self._trace(
                 trace_logger,
                 "llm",
-                "LLM Client",
-                "Sending message to the configured Ollama model.",
+                "LLM Request",
+                "Sending request to the configured LLM.",
             )
             response = self.llm_client.generate(
                 prompt=prompt,
@@ -91,8 +84,8 @@ class AmadeusChatModule:
             self._trace(
                 trace_logger,
                 "llm",
-                "LLM Client",
-                "Ollama returned a response successfully.",
+                "LLM Response",
+                "Configured LLM returned a response.",
                 level="success",
             )
             return response
