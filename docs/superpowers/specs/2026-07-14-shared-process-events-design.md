@@ -50,21 +50,28 @@ contents, secrets, or raw hidden reasoning.
 
 ## Run And Live Delivery
 
-`TraceLogger` remains the single small helper Core and modules use. Starting a
-session assigns a unique `run_id` and initializes per-run event sequencing.
-`add_event` records the structured event, then immediately invokes an optional
-plain-Python event callback. The callback is optional and failure-isolated so
-monitor delivery cannot prevent AMADEUS from returning a response.
+`ProcessEventEmitter` owns each request's event stream and has a compact,
+framework-independent API:
 
-There is intentionally no separate `ProcessEventEmitter` class or lifecycle
-API in this phase. `TraceLogger` already owns the per-request event stream and
-is the smallest compatible location for live callback delivery.
+- `start_run` creates a unique run ID and emits the initial running event.
+- `emit` records one validated operational event.
+- `complete_run` emits the final completed event.
+- `fail_run` emits the final failed event.
+- `subscribe` registers a listener for immediately delivered live events.
 
-`ChatResponseWorker` creates the logger callback for active-chat requests. It
+Listeners are plain Python callbacks. Listener failure is isolated so monitor
+delivery cannot prevent AMADEUS from returning a response. The emitter neither
+imports nor depends on PyQt.
+
+`TraceLogger` becomes a compatibility facade over one `ProcessEventEmitter`.
+Existing Core and module calls to `start_session` and `add_event` map to the
+new lifecycle and structured event API. This preserves the current trace
+payload helpers while making the emitter the single event-stream owner.
+
+`ChatResponseWorker` subscribes a callback for active-chat requests. It
 forwards each event through a PyQt signal. `AmadeusMainWindow` receives that
 signal on the GUI thread and asks the existing right-panel monitor to append or
-re-render the current structured event list. The backend neither imports nor
-depends on PyQt.
+re-render the current structured event list.
 
 At request start, MainWindow clears the current monitor and shows the first
 real event as soon as it arrives. The final payload remains a reconciliation
