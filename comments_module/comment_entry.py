@@ -22,6 +22,8 @@ class CommentEntry:
     selected_text: str
     created_at: str
     message_number: int | None = None
+    comment_type: str = "general"
+    updated_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the comment for JSON storage."""
@@ -32,6 +34,8 @@ class CommentEntry:
             "selected_text": self.selected_text,
             "created_at": self.created_at,
             "message_number": self.message_number,
+            "comment_type": self.comment_type,
+            "updated_at": self.updated_at,
         }
 
     @classmethod
@@ -45,11 +49,16 @@ class CommentEntry:
             created_at = str(raw.get("created_at") or "").strip()
             raw_number = raw.get("message_number")
             message_number = int(raw_number) if raw_number is not None else None
+            comment_type = str(raw.get("comment_type") or ("selection" if selected_text else "general")).strip().lower()
+            updated_at = str(raw.get("updated_at") or "").strip() or None
         except Exception:
             return None
 
-        if not comment_id or not chat_id or not comment or not created_at:
+        if not comment_id or not chat_id or not comment or not created_at or comment_type not in {"selection", "general"}:
             return None
+        if comment_type == "general":
+            selected_text = ""
+            message_number = None
         return cls(
             comment_id=comment_id,
             chat_id=chat_id,
@@ -57,4 +66,6 @@ class CommentEntry:
             selected_text=selected_text,
             created_at=created_at,
             message_number=message_number,
+            comment_type=comment_type,
+            updated_at=updated_at,
         )

@@ -39,10 +39,54 @@ class CommentStore:
             comment=clean_comment,
             selected_text=clean_selected,
             created_at=self._now(),
-            message_number=self._extract_message_number(clean_selected),
+            message_number=self._extract_message_number(clean_selected) if clean_selected else None,
+            comment_type="selection" if clean_selected else "general",
         )
-        self._write_all(existing + [entry])
+        self._write_all(self._read_raw_records() + [entry.to_dict()])
         return entry
+
+    def get_comment(self, comment_id: str) -> CommentEntry | None:
+        """Return one comment by id when its stored record is valid."""
+        for entry in self.list_all():
+            if entry.comment_id == comment_id:
+                return entry
+        return None
+
+    def update_comment(self, comment_id: str, comment: str) -> CommentEntry:
+        """Replace one comment's text while preserving its target metadata."""
+        clean_comment = comment.strip()
+        if not clean_comment:
+            raise ValueError("Comment text cannot be empty.")
+
+        records = self._read_raw_records()
+        for index, raw in enumerate(records):
+            entry = CommentEntry.from_dict(raw)
+            if entry is not None and entry.comment_id == comment_id:
+                updated = CommentEntry(
+                    comment_id=entry.comment_id,
+                    chat_id=entry.chat_id,
+                    comment=clean_comment,
+                    selected_text=entry.selected_text,
+                    created_at=entry.created_at,
+                    message_number=entry.message_number,
+                    comment_type=entry.comment_type,
+                    updated_at=self._now(),
+                )
+                records[index] = updated.to_dict()
+                self._write_all(records)
+                return updated
+        raise ValueError("Unknown comment record.")
+
+    def delete_comment(self, comment_id: str) -> None:
+        """Remove exactly one comment record by id."""
+        records = self._read_raw_records()
+        for index, raw in enumerate(records):
+            entry = CommentEntry.from_dict(raw)
+            if entry is not None and entry.comment_id == comment_id:
+                del records[index]
+                self._write_all(records)
+                return
+        raise ValueError("Unknown comment record.")
 
     def list_for_chat(self, chat_id: str) -> list[CommentEntry]:
         """Return comments attached to one chat in creation order."""
@@ -50,25 +94,26 @@ class CommentStore:
 
     def list_all(self) -> list[CommentEntry]:
         """Read all parseable comments from JSON storage."""
+        entries: list[CommentEntry] = []
+        for raw in self._read_raw_records():
+            parsed = CommentEntry.from_dict(raw)
+            if parsed is not None:
+                entries.append(parsed)
+        return entries
+
+    def _read_raw_records(self) -> list[dict[str, Any]]:
+        """Read raw records so unmodified legacy comments remain byte-equivalent in meaning."""
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
         except Exception:
-            raw = []
+            return []
         if not isinstance(raw, list):
             return []
+        return [item for item in raw if isinstance(item, dict)]
 
-        entries: list[CommentEntry] = []
-        for item in raw:
-            if isinstance(item, dict):
-                parsed = CommentEntry.from_dict(item)
-                if parsed is not None:
-                    entries.append(parsed)
-        return entries
-
-    def _write_all(self, entries: list[CommentEntry]) -> None:
-        """Persist the full comment list as readable JSON."""
-        payload = [entry.to_dict() for entry in entries]
-        self.path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    def _write_all(self, records: list[dict[str, Any]]) -> None:
+        """Persist raw records without enriching unmodified legacy comments."""
+        self.path.write_text(json.dumps(records, indent=2, ensure_ascii=False), encoding="utf-8")
 
     def _new_comment_id(self, existing: list[CommentEntry]) -> str:
         """Return a stable human-inspectable comment id."""
