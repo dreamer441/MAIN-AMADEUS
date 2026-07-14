@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-14 - Shared Process Events: Task 2 Failure Lifecycle Fixes
+
+- Date: 2026-07-14
+- Phase: Shared Process Events - Task 2 review fixes
+- Feature or fix: Completed safe terminal handling for LLM and missing-chat failures.
+- What changed: Chat emits a generic failed LLM response event without error-body text. Core detects module failure events and finalizes the run as failed; the missing-chat branch now also emits the same terminal failure.
+- Files/modules affected: `amadeus_core`, `amadeus_chat`, `amadeus_trace`, lifecycle tests, module documentation, changelog, and Task 2 report.
+- User-visible behavior: Existing detailed LLM and missing-chat response strings are unchanged, while Process Monitor events remain safe and terminally accurate.
+- Architecture notes: Chat owns the LLM boundary event; Core retains ownership of the final run state through the TraceLogger facade.
+- Tests performed: Recorded in `.superpowers/sdd/shared-events-task-2.md`.
+- Known limitations: Live GUI event forwarding remains Task 3.
+
 ## 2026-07-14 - Shared Process Events: Active Chat Lifecycle
 
 - Date: 2026-07-14

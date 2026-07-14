@@ -13,6 +13,7 @@
 - Returns clear errors when Ollama cannot respond.
 - Records real LLM boundary trace events when Core provides a trace logger.
 - Uses `LLM Request` and `LLM Response` titles with safe operational summaries only; prompts and responses are not included in trace data.
+- LLM failures use a generic failed `LLM Response` summary and retain the existing detailed user-facing error response.
 - Contains comments explaining why Chat formats prompts but does not own routing, storage, GUI, or file reading.
 
 ## Normal Chat File Boundary

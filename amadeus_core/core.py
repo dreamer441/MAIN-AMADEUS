@@ -278,17 +278,9 @@ class AmadeusCore:
             if chat_module is None:
                 # This should only happen if startup registration was broken or edited incorrectly.
                 response = "AMADEUS error: chat module is not registered."
-                trace_logger.add_event(
-                    "error",
-                    "Routing Error",
-                    "Core could not find the registered chat module.",
-                    level="error",
-                )
-                trace_logger.add_event(
-                    "output",
-                    "Output Ready",
-                    "Error response returned to GUI.",
-                    level="warning",
+                trace_logger.fail_run(
+                    title="Request Failed",
+                    summary="The request could not be completed.",
                 )
                 return self._build_response_payload(response, trace_logger)
 
@@ -313,10 +305,16 @@ class AmadeusCore:
                 trace_logger=trace_logger,
             )
             self._persist_exchange(clean_message, response)
-            trace_logger.complete_run(
-                title="Response Returned",
-                summary="Response returned to GUI.",
-            )
+            if trace_logger.has_failed_event():
+                trace_logger.fail_run(
+                    title="Request Failed",
+                    summary="The request could not be completed.",
+                )
+            else:
+                trace_logger.complete_run(
+                    title="Response Returned",
+                    summary="Response returned to GUI.",
+                )
             return self._build_response_payload(response, trace_logger)
 
         except Exception as error:

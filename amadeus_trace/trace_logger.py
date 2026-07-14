@@ -77,6 +77,13 @@ class TraceLogger:
         except Exception:
             return
 
+    def has_failed_event(self) -> bool:
+        """Return whether this run recorded a non-terminal operational failure."""
+        try:
+            return any(event.status is ProcessEventStatus.FAILED for event in self.emitter.events)
+        except Exception:
+            return False
+
     def get_trace_text(self, mode: str = "compact") -> str:
         """Return the latest session as readable monitor text."""
         try:

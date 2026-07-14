@@ -19,6 +19,7 @@
 - Compact and detailed text rendering.
 - Safe `TraceLogger` wrapper so monitoring failures do not break chat.
 - `TraceLogger` exposes safe `complete_run()` and `fail_run()` lifecycle terminals to its module callers.
+- `TraceLogger.has_failed_event()` lets Core finalize a run after a module records an operational failure.
 - GUI-ready structured event list for future filters and exports.
 - Designed to show real execution events only, not hidden internal thoughts.
 - Shows deterministic project file inspection route events when Core bypasses the LLM for exact file/folder questions.

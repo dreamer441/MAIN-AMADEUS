@@ -93,8 +93,8 @@ class AmadeusChatModule:
             self._trace(
                 trace_logger,
                 "error",
-                "LLM Client Error",
-                f"Ollama client error: {error}",
+                "LLM Response",
+                "Configured LLM could not return a response.",
                 level="error",
             )
             return f"AMADEUS LLM error: {error}"
