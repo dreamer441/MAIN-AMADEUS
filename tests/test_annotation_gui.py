@@ -109,6 +109,7 @@ class MaterialsPanelTests(unittest.TestCase):
 
         self.assertEqual("Copy Path", panel.material_copy_button.text())
         self.assertEqual("Delete", panel.material_remove_button.text())
+        self.assertEqual("Saved Chat", panel.materials_selector.itemText(1))
         self.assertFalse(panel.material_preview_button.isEnabled())
         self.assertFalse(panel.material_ask_button.isEnabled())
         self.assertTrue(panel.material_open_button.isEnabled())

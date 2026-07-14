@@ -92,6 +92,23 @@ class ExportRecordTests(unittest.TestCase):
             self.assertEqual(record.to_raw(), service.list_exports()[0].to_raw())
             self.assertIn("[3] User: Third", (root / record.txt_path).read_text(encoding="utf-8"))
 
+    def test_opened_export_text_excludes_internal_id_and_keeps_useful_content(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            service = ChatExportService(Path(temporary_directory), _ExportHistoryStore())
+            record = service.export_chat("chat_1")
+            selection = ExportSelection(
+                record,
+                [ChatHistoryMessage("User", "Saved export text", "2026-07-13T00:00:00+00:00", 4)],
+                "4-18",
+            )
+
+            content = service.build_materials_panel_payload(selection)["content"]
+
+            self.assertNotIn("Export ID:", content)
+            self.assertIn("Chat Export: Saved Chat", content)
+            self.assertIn("Selected Range: 4-18", content)
+            self.assertIn("[4] User: Saved export text", content)
+
 
 class MaterialsServiceTests(unittest.TestCase):
     """Verify managed files and exports stay explicit and safely bounded."""

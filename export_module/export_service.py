@@ -320,7 +320,6 @@ class ChatExportService:
         lines = [
             "Verified Exported Chat Segment",
             f"Chat Export: {record.chat_title}",
-            f"Export ID: {record.export_id}",
             f"Selected Range: {range_label}",
             f"Selected Messages: {len(messages)}",
             "Source Type: real exported chat text, not metadata",

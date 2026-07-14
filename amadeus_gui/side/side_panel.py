@@ -664,7 +664,10 @@ class RightPanelWidget(QTabWidget):
             selected_index = 0
             for index, row in enumerate(self._material_rows_by_id.values(), start=1):
                 material_id = str(row["id"])
-                self.materials_selector.addItem(f"{row.get('name', 'Untitled')} ({row.get('type', 'material')})", material_id)
+                label = str(row.get("name", "Untitled"))
+                if row.get("type") != "chat_export":
+                    label = f"{label} ({row.get('type', 'material')})"
+                self.materials_selector.addItem(label, material_id)
                 if material_id == selected_material_id:
                     selected_index = index
             self.materials_selector.setCurrentIndex(selected_index)
