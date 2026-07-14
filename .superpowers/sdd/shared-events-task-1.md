@@ -55,3 +55,16 @@ focused and full suites passed after that correction.
 - `py -3 -m unittest tests.test_process_events tests.test_annotation_core -v`: passed, 12 tests.
 - `py -3 -m compileall .`: passed.
 - `git diff --check`: passed.
+
+## Legacy Empty Session Fix - 2026-07-14
+
+- `TraceLogger.start_session()` now starts its emitter run with no synthetic event,
+  preserving the historic empty trace text and event list until the first explicit
+  legacy trace call.
+- Direct `ProcessEventEmitter.start_run()` continues to emit its initial running
+  event by default.
+- Updated compatibility tests to assert the empty legacy session directly and to
+  consume category events without removing a synthetic first event.
+- `py -3 -m unittest tests.test_process_events tests.test_annotation_core -v`: passed, 12 tests.
+- `py -3 -m compileall .`: passed.
+- `git diff --check`: passed.

@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-14 - Shared Process Events: Legacy Empty Session Fix
+
+- Date: 2026-07-14
+- Phase: Shared Process Events - Task 1
+- Feature or fix: Restored empty legacy trace sessions.
+- What changed: `TraceLogger.start_session()` now starts its emitter run without recording a synthetic event; direct `ProcessEventEmitter.start_run()` retains its initial running event by default.
+- Files/modules affected: `amadeus_trace`, focused process-event tests, trace feature documentation, changelog, and Task 1 report.
+- User-visible behavior: A newly started legacy Process Monitor session remains empty until code adds its first trace event.
+- Architecture notes: Silent start is an opt-in emitter parameter used by the compatibility facade only.
+- Tests performed: Recorded in the appended Task 1 report.
+- Known limitations: Active-chat lifecycle ownership and live GUI delivery remain separate follow-up tasks.
+
 ## 2026-07-14 - Shared Process Events: Task 1 Review Fixes
 
 - Date: 2026-07-14

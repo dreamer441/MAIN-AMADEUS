@@ -28,19 +28,21 @@ class ProcessEventEmitter:
         title: str,
         summary: str,
         brain_role: BrainRole = BrainRole.SYSTEM,
+        emit_initial: bool = True,
     ) -> str:
-        """Start a fresh run and record its initial running event."""
+        """Start a fresh run and optionally record its initial running event."""
         self._run_id = uuid4().hex
         self._is_terminal = False
         self._events = []
-        self._record(
-            source_module=source_module,
-            brain_role=brain_role,
-            event_type=ProcessEventType.RUN,
-            status=ProcessEventStatus.RUNNING,
-            title=title,
-            summary=summary,
-        )
+        if emit_initial:
+            self._record(
+                source_module=source_module,
+                brain_role=brain_role,
+                event_type=ProcessEventType.RUN,
+                status=ProcessEventStatus.RUNNING,
+                title=title,
+                summary=summary,
+            )
         return self._run_id
 
     def emit(

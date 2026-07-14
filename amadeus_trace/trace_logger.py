@@ -26,6 +26,8 @@ class TraceLogger:
             source_module="trace_logger",
             title="Trace Session Started",
             summary="Process Monitor session started.",
+            # Legacy sessions were empty until their first explicit trace event.
+            emit_initial=False,
         )
         return self.current_session
 

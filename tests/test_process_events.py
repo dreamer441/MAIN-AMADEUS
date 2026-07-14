@@ -146,6 +146,10 @@ class TraceLoggerCompatibilityTests(unittest.TestCase):
     def test_legacy_trace_text_and_payload_fields_are_preserved(self) -> None:
         logger = TraceLogger()
         logger.start_session()
+
+        self.assertEqual("No trace events recorded.", logger.get_trace_text())
+        self.assertEqual([], logger.get_trace_events())
+
         logger.add_event("routing", "Request Route", "Chat route selected.", level="success")
 
         event = logger.get_trace_events()[-1]
@@ -172,7 +176,7 @@ class TraceLoggerCompatibilityTests(unittest.TestCase):
         for category in ("file", "llm", "annotation", "module", "routing"):
             logger.add_event(category, f"{category} event", "Safe compatibility event.")
 
-        events = logger.get_trace_events()[1:]
+        events = logger.get_trace_events()
         detailed_text = logger.get_trace_text(mode="detailed")
         self.assertEqual(["file", "llm", "annotation", "module", "routing"], [event["category"] for event in events])
         for category in ("file", "llm", "annotation", "module", "routing"):

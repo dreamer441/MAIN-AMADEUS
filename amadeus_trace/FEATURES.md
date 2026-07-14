@@ -12,6 +12,8 @@
   visible in compatibility payloads and detailed text even where they share a
   validated event type.
 - Completed or failed emitter runs reject subsequent events and duplicate terminal actions.
+- Legacy `TraceLogger.start_session()` creates its emitter run silently so empty
+  sessions retain their historic empty Process Monitor output.
 - Per-message trace sessions.
 - Structured `TraceEvent` records with category, title, message, timestamp, and level.
 - Compact and detailed text rendering.
