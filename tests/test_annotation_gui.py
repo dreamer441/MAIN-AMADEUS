@@ -176,6 +176,29 @@ class CommentsPanelTests(unittest.TestCase):
         panel.comment_jump_button.click()
         self.assertEqual([12], jumps)
 
+    def test_unknown_selection_uses_selection_label_details_and_no_jump(self) -> None:
+        panel = RightPanelWidget("Ready")
+        panel.render_comments_payload({
+            "type": "comments",
+            "title": "AMADEUS Comments",
+            "content": "Comment(?) - Review.",
+            "metadata": {
+                "comment_count": 1,
+                "comments": [{
+                    "comment_id": "comment_1",
+                    "comment": "Review.",
+                    "comment_type": "selection",
+                    "selected_text": "A selected fragment",
+                    "message_number": None,
+                }],
+            },
+        })
+
+        self.assertEqual("Comment(?)", panel.comments_selector.currentText())
+        self.assertIn("Target: Selected text (message unknown)", panel.comments_viewer.toPlainText())
+        self.assertIn("Type: Selection", panel.comments_viewer.toPlainText())
+        self.assertFalse(panel.comment_jump_button.isEnabled())
+
 
 class FakeCommentCore:
     """Small Core substitute that records MainWindow comment delegation."""
@@ -270,6 +293,15 @@ class MainWindowCommentActionTests(unittest.TestCase):
 
         self.window._jump_to_message(99)
         self.assertEqual("Message 99 is not visible in this chat.", self.window.status_label.text())
+
+    def test_jump_ignores_message_number_text_inside_earlier_content(self) -> None:
+        self.window._append_message("User", "This content misleadingly includes [12] before its header.", message_number=1)
+        self.window._append_message("AMADEUS", "The actual target.", message_number=12)
+
+        self.window._jump_to_message(12)
+
+        self.assertEqual("Jumped to message 12.", self.window.status_label.text())
+        self.assertTrue(self.window.chat_history.textCursor().block().text().startswith("[12] "))
 
 
 if __name__ == "__main__":

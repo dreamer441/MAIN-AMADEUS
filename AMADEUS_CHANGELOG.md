@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-14 - Phase 6 Follow-Up: Comment Target And Jump Fixes
+
+- Date: 2026-07-14
+- Phase: Phase 6 - Comments And Export Display Polish
+- Feature or fix: Preserved unknown selection-comment identity and hardened comment message jumps.
+- What changed: Selection comments without a detected message number now display as `Comment(?)`, retain Selection target details, and keep Jump disabled; `Comment(A)` remains exclusive to general comments. MainWindow now finds only document blocks beginning with the requested rendered message header, preventing content text such as `[12] ` from receiving the jump.
+- Files/modules affected: `comments_module`, `amadeus_gui`, focused comment/GUI tests, and Phase 6 module documentation.
+- User-visible behavior: Unknown selected-text comments are no longer presented as general chat comments. Jump always lands on the actual visible numbered-message header or reports it unavailable.
+- Architecture notes: Comment type continues to determine comment semantics while message number remains optional best-effort metadata. GUI jump lookup uses QTextDocument block boundaries rather than an unanchored text search.
+- Tests performed: `py -3 -m unittest tests.test_comments_module -v` passed 5 tests; `py -3 -m unittest tests.test_annotation_gui -v` passed 12 tests; `py -3 -m unittest discover -s tests -v` passed 44 tests; `py -3 -m compileall .` completed successfully.
+- Known limitations: Selection message detection remains best-effort until exact structured message references exist; unknown selections intentionally cannot jump.
+
 ## 2026-07-14 - Phase 6: Comments And Export Display Polish
 
 - Date: 2026-07-14

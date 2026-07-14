@@ -41,9 +41,14 @@ class CommentService:
         if comments:
             lines = []
             for entry in comments:
-                # Show selection targets directly for future message-context work;
-                # general annotations use A because they are not tied to a message.
-                label = str(entry.message_number) if entry.comment_type == "selection" and entry.message_number is not None else "A"
+                # General annotations use A; a selection without a detected header
+                # remains visibly distinct because it still owns selected text.
+                if entry.comment_type == "general":
+                    label = "A"
+                elif entry.message_number is None:
+                    label = "?"
+                else:
+                    label = str(entry.message_number)
                 lines.append(f"Comment({label}) - {entry.comment}")
                 if entry.comment_type == "selection" and entry.selected_text:
                     preview = entry.selected_text.replace("\n", " ")

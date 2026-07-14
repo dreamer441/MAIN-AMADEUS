@@ -77,7 +77,7 @@
 - [ ] Show selected-text preview before asking Side Ask.
 - [ ] Allow saving Side Ask answers directly into sheets.
 - [ ] Add visual comment markers near numbered messages.
-- [ ] Add exact message selection once `[current][number]` is implemented.
+- [ ] Add exact message selection once `[current][number]` is implemented; unknown selection comments remain non-jumpable until then.
 
 ## Message Metadata Visual Roadmap
 

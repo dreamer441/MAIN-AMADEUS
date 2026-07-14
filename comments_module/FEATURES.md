@@ -16,5 +16,5 @@
 
 - Supports general comments for the current chat without requiring a text selection.
 - Keeps selection comments separate and detects their visible message numbers on a best-effort basis.
-- Displays general comments as `Comment(A)` and selection comments as `Comment(number)`.
+- Displays general comments as `Comment(A)`, detected selection targets as `Comment(number)`, and unknown selection targets as `Comment(?)`.
 - Provides Comments-panel edit, delete, and jump-to-visible-message actions.

@@ -86,6 +86,11 @@ The Process Monitor shows real events such as input received, annotation check, 
 - Added Add Comment button for selected chat text.
 - Right panel includes a Comments tab for current-chat comments.
 
+## Phase 6 Comment Follow-Up
+
+- General comments display as `Comment(A)`; selected text without a detected message displays as `Comment(?)`, retains Selection details, and cannot jump.
+- Comment jumps match only the start of a rendered numbered-message block, not matching text inside message content.
+
 ## Side Ask and Comments Polish V1.1
 
 - Side Ask tab now has three separate areas: question, optional context box, and answer.

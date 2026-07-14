@@ -41,6 +41,16 @@ class CommentsModuleTests(unittest.TestCase):
 
         self.assertEqual([], self.service.list_for_chat("chat_1"))
 
+    def test_selection_without_a_detected_message_keeps_its_own_payload_label(self) -> None:
+        entry = self.service.add_comment("chat_1", "Needs context.", "A selected fragment without a header")
+        payload = self.service.build_panel_payload("chat_1")
+
+        self.assertEqual("selection", entry.comment_type)
+        self.assertIsNone(entry.message_number)
+        self.assertIn("Comment(?) - Needs context.", payload["content"])
+        self.assertNotIn("Comment(A) - Needs context.", payload["content"])
+        self.assertEqual("selection", payload["metadata"]["comments"][0]["comment_type"])
+
     def test_comment_ids_do_not_repeat_after_deleting_a_middle_entry(self) -> None:
         first = self.service.add_comment("chat_1", "First note.")
         middle = self.service.add_comment("chat_1", "Middle note.")

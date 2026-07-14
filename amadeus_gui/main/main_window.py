@@ -972,12 +972,20 @@ class AmadeusMainWindow(QMainWindow):
 
     def _jump_to_message(self, message_number: int) -> None:
         """Focus the visible chat message linked to the selected comment."""
-        self.chat_history.moveCursor(QTextCursor.MoveOperation.Start)
-        if not self.chat_history.find(f"[{message_number}] "):
-            self.status_label.setText(f"Message {message_number} is not visible in this chat.")
-            return
-        self.chat_history.setFocus()
-        self.status_label.setText(f"Jumped to message {message_number}.")
+        header = f"[{message_number}] "
+        block = self.chat_history.document().begin()
+        while block.isValid():
+            # A rendered message begins a document block; content text can contain
+            # bracketed numbers but must never satisfy a comment jump.
+            if block.text().startswith(header):
+                cursor = QTextCursor(self.chat_history.document())
+                cursor.setPosition(block.position())
+                self.chat_history.setTextCursor(cursor)
+                self.chat_history.setFocus()
+                self.status_label.setText(f"Jumped to message {message_number}.")
+                return
+            block = block.next()
+        self.status_label.setText(f"Message {message_number} is not visible in this chat.")
 
     def _selected_chat_text(self) -> str:
         """Return selected chat text with Qt paragraph separators normalized."""

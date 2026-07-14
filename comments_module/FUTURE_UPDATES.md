@@ -1,6 +1,6 @@
 # Comments Module Future Updates
 
-- [ ] Comment directly on exact message ids after `[current][number]` exists; current selection detection remains best-effort.
+- [ ] Comment directly on exact message ids after `[current][number]` exists; current selection detection remains best-effort and uses `Comment(?)` when no header is found.
 - [ ] Comments on sheets, materials, files, nodes, and links.
 - [ ] Comment categories such as note, bug, decision, warning, idea.
 - [ ] Convert selected comments into Mind Map node/link evidence.

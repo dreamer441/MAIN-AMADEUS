@@ -855,7 +855,13 @@ class RightPanelWidget(QTabWidget):
         self.comments_selector.clear()
         for comment_id, row in self._comment_rows_by_id.items():
             message_number = row.get("message_number")
-            label = f"Comment({message_number})" if isinstance(message_number, int) else "Comment(A)"
+            comment_type = row.get("comment_type")
+            if comment_type == "general":
+                label = "Comment(A)"
+            elif isinstance(message_number, int):
+                label = f"Comment({message_number})"
+            else:
+                label = "Comment(?)"
             self.comments_selector.addItem(label, comment_id)
         self._load_selected_comment(self.comments_selector.currentIndex())
 
@@ -868,8 +874,14 @@ class RightPanelWidget(QTabWidget):
             self.comments_viewer.clear()
             return
         message_number = row.get("message_number")
-        target = f"Message {message_number}" if isinstance(message_number, int) else "General chat"
-        comment_type = str(row.get("comment_type") or "general").capitalize()
+        is_selection = row.get("comment_type") == "selection"
+        if isinstance(message_number, int):
+            target = f"Message {message_number}"
+        elif is_selection:
+            target = "Selected text (message unknown)"
+        else:
+            target = "General chat"
+        comment_type = "Selection" if is_selection else "General"
         self.comments_viewer.setPlainText(f"{row.get('comment', '')}\n\nTarget: {target}\nType: {comment_type}")
         self.comments_viewer.moveCursor(QTextCursor.MoveOperation.Start)
 
