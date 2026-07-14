@@ -11,7 +11,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
-from amadeus_gui.main.main_window import AmadeusMainWindow, MessageInput
+from amadeus_gui.main.main_window import AmadeusMainWindow, ChatResponseWorker, MessageInput
 from amadeus_gui.side import RightPanelWidget
 
 
@@ -77,6 +77,39 @@ class CodeViewerLineNumberTests(unittest.TestCase):
         panel = RightPanelWidget("Ready")
 
         self.assertEqual("1: first\n2: \n3: third", panel._line_labelled_code("first\n\nthird\n"))
+
+
+class ProcessMonitorLiveEventTests(unittest.TestCase):
+    """Verify normal chat lifecycle rows reach the GUI before its final payload."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.application = QApplication.instance() or QApplication([])
+
+    def test_worker_forwards_events_before_finished(self) -> None:
+        order: list[str] = []
+
+        class Core:
+            def handle_user_message(self, _message: str, event_listener=None) -> dict[str, str]:
+                event_listener({"sequence": 1, "title": "Request Received", "summary": "Message received."})
+                return {"response": "ok"}
+
+        worker = ChatResponseWorker(Core(), "hello")
+        received: list[dict[str, object]] = []
+        worker.process_event.connect(lambda event: (received.append(event), order.append("event")))
+        worker.finished.connect(lambda _result: order.append("finished"))
+
+        worker.run()
+
+        self.assertEqual("Request Received", received[0]["title"])
+        self.assertEqual(["event", "finished"], order)
+
+    def test_panel_renders_live_event_list(self) -> None:
+        panel = RightPanelWidget("Ready")
+
+        panel.render_trace_events([{"sequence": 1, "title": "Context Ready", "summary": "Selected context types: memory."}])
+
+        self.assertIn("Context Ready", panel.process_monitor.toPlainText())
 
 
 class MaterialsPanelTests(unittest.TestCase):

@@ -8,6 +8,7 @@ Current request flow:
 GUI -> Core -> Annotation check OR Chat route -> Context Builder / Identity -> Chat -> LLM Client -> GUI
 """
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -153,7 +154,12 @@ class AmadeusCore:
         self.annotation_registry.register("sheet", SheetAnnotation())
         self.annotation_registry.register("export", ExportAnnotation())
 
-    def handle_user_message(self, message: str, callable_context: str | None = None) -> dict[str, Any]:
+    def handle_user_message(
+        self,
+        message: str,
+        callable_context: str | None = None,
+        event_listener: Callable[[dict[str, object]], None] | None = None,
+    ) -> dict[str, Any]:
         """Route user text and return both AMADEUS output and Process Monitor trace.
 
         This method is the main request pipeline. Keep it readable: each trace event
@@ -161,6 +167,9 @@ class AmadeusCore:
         """
         trace_logger = TraceLogger()
         trace_logger.start_session()
+        if event_listener is not None:
+            # Core publishes plain event rows so UI adapters never enter the backend.
+            trace_logger.emitter.subscribe(lambda event: event_listener(event.to_dict()))
 
         clean_message = message.strip()
         trace_logger.add_event(

@@ -24,6 +24,7 @@ class SidePanelState:
     active_tab: str = "process"
     compact_trace: str = "Process Monitor will show the latest message trace here."
     detailed_trace: str = "Process Monitor will show the latest message trace here."
+    trace_events: list[dict[str, object]] = field(default_factory=list)
     code_payload: SidePanelPayload | None = None
     memory_payload: SidePanelPayload | None = None
     sheets_payload: SidePanelPayload | None = None
@@ -35,6 +36,27 @@ class SidePanelState:
         """Store the latest trace text and mark Process Monitor as active."""
         self.compact_trace = compact
         self.detailed_trace = detailed or compact
+        self.trace_events = []
+        self.active_tab = "process"
+
+    def set_trace_events(self, events: list[dict[str, object]]) -> None:
+        """Store structured events and derive both established monitor text modes."""
+        self.trace_events = [dict(event) for event in events]
+        compact_rows = []
+        detailed_rows = []
+        for event in self.trace_events:
+            title = str(event.get("title", "Process Event"))
+            summary = str(event.get("summary", event.get("message", "")))
+            compact_rows.append(f"[{title}]\n{summary}")
+            detailed_rows.append(
+                f"[{title}]\n"
+                f"Level: {event.get('level', 'info')}\n"
+                f"Category: {event.get('category', 'system')}\n"
+                f"Time: {event.get('timestamp', 'Unavailable')}\n"
+                f"{summary}"
+            )
+        self.compact_trace = "\n\n".join(compact_rows) or "No trace events recorded."
+        self.detailed_trace = "\n\n".join(detailed_rows) or "No trace events recorded."
         self.active_tab = "process"
 
     def set_payload(self, payload: SidePanelPayload) -> None:
@@ -67,6 +89,7 @@ class SidePanelState:
         self.active_tab = "process"
         self.compact_trace = default_trace
         self.detailed_trace = default_trace
+        self.trace_events = []
         self.code_payload = None
         self.memory_payload = None
         self.sheets_payload = None

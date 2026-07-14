@@ -422,6 +422,11 @@ class RightPanelWidget(QTabWidget):
         self.state.set_trace(compact_trace, detailed_trace)
         self.render_latest_trace()
 
+    def render_trace_events(self, events: list[dict[str, object]]) -> None:
+        """Render structured lifecycle rows received while Core is still working."""
+        self.state.set_trace_events(events)
+        self.render_latest_trace()
+
     def render_latest_trace(self) -> None:
         """Switch Compact/Detailed trace text without asking Core to run again."""
         mode = self.trace_mode_selector.currentText().lower() if hasattr(self, "trace_mode_selector") else "compact"

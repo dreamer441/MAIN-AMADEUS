@@ -102,6 +102,7 @@ class ChatResponseWorker(QObject):
     """
 
     finished = pyqtSignal(object)
+    process_event = pyqtSignal(object)
 
     def __init__(self, core: AmadeusCore, message: str, material_id: str = "") -> None:
         super().__init__()
@@ -114,7 +115,9 @@ class ChatResponseWorker(QObject):
         try:
             result = (
                 self.core.handle_material_message(self.material_id, self.message)
-                if self.material_id else self.core.handle_user_message(self.message)
+                if self.material_id else self.core.handle_user_message(
+                    self.message, event_listener=self.process_event.emit
+                )
             )
             if isinstance(result, str):
                 # Backward safety if Core temporarily returns the older string shape.
@@ -394,6 +397,7 @@ class AmadeusMainWindow(QMainWindow):
         self.annotation_suggestion_box.hide()
         self._append_message("User", message)
         self._set_waiting_for_response(True)
+        self._latest_trace_events = []
 
         # This temporary monitor text is a GUI event, not Core trace. The real trace replaces it later.
         self.right_panel.show_waiting_trace()
@@ -411,6 +415,7 @@ class AmadeusMainWindow(QMainWindow):
 
         # Qt signal wiring: thread starts worker, worker returns result, then thread shuts down cleanly.
         thread.started.connect(worker.run)
+        worker.process_event.connect(self._handle_process_event)
         worker.finished.connect(self._handle_response)
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
@@ -570,12 +575,22 @@ class AmadeusMainWindow(QMainWindow):
         self._render_side_panel(side_panel)
         self._set_waiting_for_response(False)
 
+    def _handle_process_event(self, event: object) -> None:
+        """Append one backend-safe event row while a normal chat request is running."""
+        if not isinstance(event, dict):
+            return
+        self._latest_trace_events.append(event)
+        self.right_panel.render_trace_events(self._latest_trace_events)
+
     def _render_side_panel(self, side_panel: object | None) -> None:
         """Delegate right-panel payload rendering to the reusable panel widget."""
         self.right_panel.render_side_panel_payload(side_panel, chat_context_text=self._current_chat_context_text())
 
     def _render_latest_trace(self) -> None:
         """Render the latest trace through the right-panel widget."""
+        if self._latest_trace_events:
+            self.right_panel.render_trace_events(self._latest_trace_events)
+            return
         self.right_panel.render_trace(self._latest_trace_text, self._latest_trace_detailed)
 
     def _update_annotation_suggestions(self) -> None:
