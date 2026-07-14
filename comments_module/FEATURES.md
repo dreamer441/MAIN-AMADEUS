@@ -11,3 +11,10 @@
 - Comments panel now shows target message number in the heading format `comment(number)`.
 - Comments still store the full selected text preview and internal comment id.
 - Unknown targets are shown as `comment(?)` instead of pretending the message number is known.
+
+## Phase 6: Comments And Export Display Polish
+
+- Supports general comments for the current chat without requiring a text selection.
+- Keeps selection comments separate and detects their visible message numbers on a best-effort basis.
+- Displays general comments as `Comment(A)` and selection comments as `Comment(number)`.
+- Provides Comments-panel edit, delete, and jump-to-visible-message actions.

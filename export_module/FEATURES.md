@@ -10,6 +10,13 @@
 - Provides a strict prompt-context contract for exported ranges so AMADEUS should not answer from the wrong/current chat.
 - Exposes known export records to Materials and supports deliberate removal through Materials' public route.
 
+## Phase 6: Export Display Polish
+
+- Shows export rows with clean human-readable dates and exported message ranges.
+- Opens exports without exposing internal export identifiers in the displayed content.
+- Provides Export Materials actions to Open, Use, Copy Path, and Delete an exported chat.
+- Preserves legacy export records by falling back to their stored message count when range bounds are unavailable.
+
 ## Annotation Commands
 
 Preferred structure:

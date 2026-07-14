@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-14 - Phase 6: Comments And Export Display Polish
+
+- Date: 2026-07-14
+- Phase: Phase 6 - Comments And Export Display Polish
+- Feature or fix: Completed general and selection comment actions plus clean exported-chat presentation in Materials.
+- What changed: Added general chat comments alongside selection comments, edit/delete/jump actions in the Comments panel, and clean `Comment(number)` and `Comment(A)` headings. Export records now retain optional first/last message bounds for clean date and range rows, opened export content omits internal ids, and Export Materials exposes Open, Use, Copy Path, and Delete actions.
+- Files/modules affected: `comments_module`, `export_module`, `materials_module`, `amadeus_core`, `amadeus_gui`, focused tests, and Phase 6 module documentation.
+- User-visible behavior: Users can add a comment without selecting text, manage saved comments, and jump to a visible selected-message target. Materials presents exported chats with readable dates/ranges and direct export-specific controls.
+- Architecture notes: Comment types and edit/delete operations remain owned by Comments through Core-mediated GUI calls. Materials composes Export's public API and uses display-ready export metadata; old export records safely fall back to message counts when bounds are absent.
+- Tests performed: `python` resolves to the Windows App Execution Alias, so `py -3 -m compileall .` completed successfully. `py -3 -m unittest discover -s tests -v` passed 41 tests.
+- Known limitations: Selection message detection remains best-effort until exact `[current][number]` references exist. Jump works only for messages currently visible in the chat, and legacy exports without saved bounds show message counts rather than exact ranges.
+
 ## 2026-07-13 - Phase 5: Managed Materials
 
 - Date: 2026-07-13
