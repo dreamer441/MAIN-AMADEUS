@@ -6,6 +6,11 @@
   ordered sequences, optional parent IDs/progress/details, and copied metadata.
 - Framework-independent `ProcessEventEmitter` lifecycle API with immediate,
   fault-isolated listener delivery.
+- `ProcessEventEmitter.start_run()`, `emit()`, `complete_run()`, and `fail_run()`
+  enforce one ordered run with no events before start or after terminal state;
+  `events` exposes an immutable recorded-event snapshot.
+- `subscribe(listener)` delivers future events immediately and isolates listener
+  failures so observability cannot interrupt request execution.
 - `TraceLogger` compatibility facade that maps legacy trace categories and levels
   to validated events while preserving compact/detailed text and legacy payload keys.
 - Legacy `file`, `llm`, `annotation`, `module`, and `routing` categories remain
@@ -26,7 +31,13 @@
 - Comments now explicitly mark the safety boundary between real execution trace and fake/hidden reasoning.
 
 Normal active-chat lifecycle emission is integrated at Core, Context Builder, and
-Chat boundaries. Live GUI forwarding remains a separate follow-up task.
+Chat boundaries. Normal chat now forwards safe structured event rows live through
+a framework-neutral Core listener and GUI PyQt signal; the final Core payload
+reconciles the Process Monitor after the response completes.
+
+The Process Monitor is limited to real, safe operational events. It does not
+expose hidden reasoning or chain-of-thought, and listener failures cannot affect
+the underlying chat request.
 
 ## Current Event Categories
 

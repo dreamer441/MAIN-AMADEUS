@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-14 - Shared Process Events: Foundation Documentation And Release
+
+- Date: 2026-07-14
+- Phase: Shared Process Events - Task 4
+- Feature or fix: Documented and released the shared process-event foundation only.
+- What changed: Documented the immutable validated event model, emitter lifecycle and listener API, normal-chat live GUI bridge, safety boundary, and `TraceLogger` compatibility facade. Updated future scope to retain Process Monitor V2, Inner Brain, and persistent background jobs as future work.
+- Files/modules affected: `amadeus_trace` documentation, `amadeus_gui` documentation, global changelog, and Task 4 report.
+- User-visible behavior: Process Monitor documentation now accurately describes incremental normal-chat event display followed by final-payload reconciliation; no new runtime behavior is introduced by this release task.
+- Architecture notes: `ProcessEventEmitter` remains framework-independent and listener failures remain isolated. Core exposes a framework-neutral listener while the GUI worker performs the PyQt adaptation. This is the foundation only, not Process Monitor V2, an Inner Brain, or persistent job tracking.
+- Tests performed: `python` was unavailable through the Windows App Execution Alias, so `py -3 -m compileall .` completed successfully and `py -3 -m unittest discover -s tests -v` passed 62 tests; details are recorded in `.superpowers/sdd/shared-events-task-4.md`.
+- Known limitations: Process Monitor V2 filtering/timeline, trace export and persistence, any Inner Brain presentation, and persistent background-job tracking are not implemented.
+
 ## 2026-07-14 - Shared Process Events: Task 2 Failure Lifecycle Fixes
 
 - Date: 2026-07-14
