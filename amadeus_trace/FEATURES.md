@@ -8,6 +8,10 @@
   fault-isolated listener delivery.
 - `TraceLogger` compatibility facade that maps legacy trace categories and levels
   to validated events while preserving compact/detailed text and legacy payload keys.
+- Legacy `file`, `llm`, `annotation`, `module`, and `routing` categories remain
+  visible in compatibility payloads and detailed text even where they share a
+  validated event type.
+- Completed or failed emitter runs reject subsequent events and duplicate terminal actions.
 - Per-message trace sessions.
 - Structured `TraceEvent` records with category, title, message, timestamp, and level.
 - Compact and detailed text rendering.

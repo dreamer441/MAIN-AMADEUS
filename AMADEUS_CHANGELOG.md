@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-14 - Shared Process Events: Task 1 Review Fixes
+
+- Date: 2026-07-14
+- Phase: Shared Process Events - Task 1
+- Feature or fix: Preserved legacy trace categories and made run terminal states enforceable.
+- What changed: `TraceLogger` now retains normalized legacy categories for compatibility rendering while still publishing validated event fields. Completed and failed runs reject later events and duplicate/conflicting terminal lifecycle calls.
+- Files/modules affected: `amadeus_trace`, focused process-event tests, trace feature documentation, changelog, and Task 1 report.
+- User-visible behavior: Existing detailed trace text and structured payloads keep `file`, `llm`, `annotation`, `module`, and `routing` labels.
+- Architecture notes: The legacy category is compatibility metadata owned by the facade; the event model continues to use validated types. Terminal state is reset only by a new run.
+- Tests performed: Recorded in the appended Task 1 report.
+- Known limitations: Active-chat lifecycle ownership and live GUI delivery remain separate follow-up tasks.
+
 ## 2026-07-14 - Shared Process Events: Task 1 Foundation
 
 - Date: 2026-07-14

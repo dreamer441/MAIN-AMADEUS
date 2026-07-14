@@ -41,3 +41,17 @@ focused and full suites passed after that correction.
 - Task 3 must subscribe GUI worker delivery to the emitter.
 - Metadata is copied at the top level and exposed read-only; nested mutable metadata
   values remain the caller's responsibility until a later serialization policy is needed.
+
+## Review Fixes - 2026-07-14
+
+- Preserved the normalized legacy `file`, `llm`, `annotation`, `module`, and
+  `routing` category in facade-owned metadata so compatibility payloads and detailed
+  text retain the original category while `event_type` remains validated.
+- Made `complete_run` and `fail_run` terminal. Later emissions, duplicate terminal
+  actions, and conflicting completion/failure actions raise `RuntimeError` without
+  recording an event. Terminal state is set before listener delivery to block
+  re-entrant conflicting events.
+- Added regressions for every requested legacy category and both terminal states.
+- `py -3 -m unittest tests.test_process_events tests.test_annotation_core -v`: passed, 12 tests.
+- `py -3 -m compileall .`: passed.
+- `git diff --check`: passed.

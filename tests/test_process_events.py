@@ -78,6 +78,67 @@ class ProcessEventEmitterTests(unittest.TestCase):
                 summary="Enum validation must reject strings.",
             )
 
+    def test_completed_run_rejects_later_events_and_duplicate_terminals(self) -> None:
+        emitter = ProcessEventEmitter()
+        listener_errors = []
+
+        def emit_from_terminal_listener(_event) -> None:
+            if _event.status is not ProcessEventStatus.COMPLETED:
+                return
+            try:
+                emitter.emit(
+                    source_module="core",
+                    brain_role=BrainRole.SYSTEM,
+                    event_type=ProcessEventType.RESULT,
+                    status=ProcessEventStatus.COMPLETED,
+                    title="Listener result",
+                    summary="Must not be recorded.",
+                )
+            except RuntimeError as error:
+                listener_errors.append(str(error))
+
+        emitter.subscribe(emit_from_terminal_listener)
+        emitter.start_run(source_module="core", title="Request received", summary="Message received.")
+        emitter.complete_run(title="Response returned", summary="Response returned to GUI.")
+
+        with self.assertRaises(RuntimeError):
+            emitter.emit(
+                source_module="core",
+                brain_role=BrainRole.SYSTEM,
+                event_type=ProcessEventType.RESULT,
+                status=ProcessEventStatus.COMPLETED,
+                title="Late result",
+                summary="Must not be recorded.",
+            )
+        with self.assertRaises(RuntimeError):
+            emitter.complete_run(title="Duplicate completion", summary="Must not be recorded.")
+        with self.assertRaises(RuntimeError):
+            emitter.fail_run(title="Conflicting failure", summary="Must not be recorded.")
+
+        self.assertEqual(2, len(emitter.events))
+        self.assertEqual(1, len(listener_errors))
+
+    def test_failed_run_rejects_later_events_and_duplicate_terminals(self) -> None:
+        emitter = ProcessEventEmitter()
+        emitter.start_run(source_module="core", title="Request received", summary="Message received.")
+        emitter.fail_run(title="Request failed", summary="A safe failure occurred.")
+
+        with self.assertRaises(RuntimeError):
+            emitter.emit(
+                source_module="core",
+                brain_role=BrainRole.SYSTEM,
+                event_type=ProcessEventType.STEP,
+                status=ProcessEventStatus.RUNNING,
+                title="Late work",
+                summary="Must not be recorded.",
+            )
+        with self.assertRaises(RuntimeError):
+            emitter.fail_run(title="Duplicate failure", summary="Must not be recorded.")
+        with self.assertRaises(RuntimeError):
+            emitter.complete_run(title="Conflicting completion", summary="Must not be recorded.")
+
+        self.assertEqual(2, len(emitter.events))
+
 
 class TraceLoggerCompatibilityTests(unittest.TestCase):
     """Verify legacy trace calls remain renderable through the emitter facade."""
@@ -103,6 +164,19 @@ class TraceLoggerCompatibilityTests(unittest.TestCase):
 
         self.assertEqual("warning", logger.get_trace_events()[-1]["level"])
         self.assertEqual("warning", logger.current_session.events[-1].level)
+
+    def test_legacy_categories_are_preserved_in_payload_and_detail_text(self) -> None:
+        logger = TraceLogger()
+        logger.start_session()
+
+        for category in ("file", "llm", "annotation", "module", "routing"):
+            logger.add_event(category, f"{category} event", "Safe compatibility event.")
+
+        events = logger.get_trace_events()[1:]
+        detailed_text = logger.get_trace_text(mode="detailed")
+        self.assertEqual(["file", "llm", "annotation", "module", "routing"], [event["category"] for event in events])
+        for category in ("file", "llm", "annotation", "module", "routing"):
+            self.assertIn(f"Category: {category}", detailed_text)
 
 
 if __name__ == "__main__":

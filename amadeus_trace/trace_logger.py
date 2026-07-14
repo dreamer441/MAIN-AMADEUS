@@ -41,15 +41,17 @@ class TraceLogger:
             if self.current_session is None:
                 self.start_session()
             event_type, status = self._map_legacy_event(category, level)
+            clean_category = category.strip().lower()
             # Keep the historic public session object useful for direct consumers.
             self.current_session.add_event(category, title, message, level)
             self.emitter.emit(
-                source_module=category.strip().lower() or "system",
+                source_module=clean_category or "system",
                 brain_role=BrainRole.SYSTEM,
                 event_type=event_type,
                 status=status,
                 title=title,
                 summary=message,
+                metadata={"legacy_category": clean_category},
             )
         except Exception:
             # Trace is diagnostic only. AMADEUS must still answer if monitoring fails.

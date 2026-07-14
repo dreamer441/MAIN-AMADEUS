@@ -104,7 +104,7 @@ class ProcessEvent:
 
     def to_dict(self) -> dict[str, object]:
         """Return structured data, including legacy display aliases."""
-        category = _legacy_category(self.event_type)
+        category = _legacy_category(self)
         level = _legacy_level(self.status, self.event_type)
         return {
             "event_id": self.event_id,
@@ -136,14 +136,27 @@ class ProcessEvent:
         return (
             f"[{self.title}]\n"
             f"Level: {_legacy_level(self.status, self.event_type)}\n"
-            f"Category: {_legacy_category(self.event_type)}\n"
+            f"Category: {_legacy_category(self)}\n"
             f"Time: {self.timestamp.isoformat()}\n"
             f"{self.summary}"
         )
 
 
-def _legacy_category(event_type: ProcessEventType) -> str:
-    """Map validated event types to the old Process Monitor categories."""
+def _legacy_category(event: ProcessEvent) -> str:
+    """Return a preserved legacy category or map a native event type safely."""
+    legacy_category = event.metadata.get("legacy_category")
+    if isinstance(legacy_category, str) and legacy_category in {
+        "system",
+        "input",
+        "annotation",
+        "routing",
+        "file",
+        "llm",
+        "module",
+        "output",
+        "error",
+    }:
+        return legacy_category
     return {
         ProcessEventType.OBJECTIVE: "input",
         ProcessEventType.DECISION: "routing",
@@ -152,7 +165,7 @@ def _legacy_category(event_type: ProcessEventType) -> str:
         ProcessEventType.RESULT: "output",
         ProcessEventType.ERROR: "error",
         ProcessEventType.WARNING: "system",
-    }.get(event_type, "system")
+    }.get(event.event_type, "system")
 
 
 def _legacy_level(status: ProcessEventStatus, event_type: ProcessEventType) -> str:
