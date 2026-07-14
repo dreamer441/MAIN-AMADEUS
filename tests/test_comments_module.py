@@ -41,6 +41,20 @@ class CommentsModuleTests(unittest.TestCase):
 
         self.assertEqual([], self.service.list_for_chat("chat_1"))
 
+    def test_comment_ids_do_not_repeat_after_deleting_a_middle_entry(self) -> None:
+        first = self.service.add_comment("chat_1", "First note.")
+        middle = self.service.add_comment("chat_1", "Middle note.")
+        third = self.service.add_comment("chat_1", "Third note.")
+
+        self.service.delete_comment(middle.comment_id)
+        added = self.service.add_comment("chat_1", "Fourth note.")
+
+        self.assertEqual("comment_0004", added.comment_id)
+        self.assertEqual(
+            {first.comment_id, third.comment_id, added.comment_id},
+            {entry.comment_id for entry in self.service.list_for_chat("chat_1")},
+        )
+
     def test_legacy_selection_record_infers_its_type(self) -> None:
         path = self.root / "data/comments/comments.json"
         path.write_text(json.dumps([{

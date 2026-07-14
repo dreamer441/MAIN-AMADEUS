@@ -116,8 +116,13 @@ class CommentStore:
         self.path.write_text(json.dumps(records, indent=2, ensure_ascii=False), encoding="utf-8")
 
     def _new_comment_id(self, existing: list[CommentEntry]) -> str:
-        """Return a stable human-inspectable comment id."""
-        return f"comment_{len(existing) + 1:04d}"
+        """Return the next stable human-inspectable comment id."""
+        highest_number = 0
+        for entry in existing:
+            match = re.fullmatch(r"comment_(\d+)", entry.comment_id)
+            if match:
+                highest_number = max(highest_number, int(match.group(1)))
+        return f"comment_{highest_number + 1:04d}"
 
     def _now(self) -> str:
         """Return UTC timestamp for portable local JSON records."""
