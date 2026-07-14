@@ -2,14 +2,16 @@
 
 import os
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
-from amadeus_gui.main.main_window import MessageInput
+from amadeus_gui.main.main_window import AmadeusMainWindow, MessageInput
 from amadeus_gui.side import RightPanelWidget
 
 
@@ -135,6 +137,101 @@ class CommentsPanelTests(unittest.TestCase):
         panel.comments_selector.setCurrentIndex(1)
         panel.comment_jump_button.click()
         self.assertEqual([12], jumps)
+
+
+class FakeCommentCore:
+    """Small Core substitute that records MainWindow comment delegation."""
+
+    def __init__(self) -> None:
+        self.add_calls: list[tuple[str, str]] = []
+        self.update_calls: list[tuple[str, str]] = []
+        self.delete_calls: list[str] = []
+        self.comments = [{
+            "comment_id": "comment_1",
+            "comment": "Review this.",
+            "message_number": 12,
+            "comment_type": "selection",
+        }]
+
+    def list_chats(self) -> list[object]:
+        return []
+
+    def get_current_chat_id(self) -> str:
+        return "chat_1"
+
+    def get_current_chat_metadata(self) -> SimpleNamespace:
+        return SimpleNamespace(title="Test Chat", description="", summary="")
+
+    def load_chat_history(self) -> list[object]:
+        return []
+
+    def get_project_tree(self, _relative_path: str) -> dict:
+        return {"path": "", "folders": [], "files": []}
+
+    def get_comments_panel_payload(self) -> dict:
+        return {
+            "type": "comments",
+            "title": "AMADEUS Comments",
+            "content": "",
+            "metadata": {"comment_count": len(self.comments), "comments": self.comments},
+        }
+
+    def add_comment(self, comment: str, selected_text: str) -> SimpleNamespace:
+        self.add_calls.append((comment, selected_text))
+        return SimpleNamespace(comment_id="comment_2")
+
+    def update_comment(self, comment_id: str, comment: str) -> None:
+        self.update_calls.append((comment_id, comment))
+
+    def delete_comment(self, comment_id: str) -> None:
+        self.delete_calls.append(comment_id)
+
+
+class MainWindowCommentActionTests(unittest.TestCase):
+    """Verify Comments controls delegate to Core through the real window wiring."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.application = QApplication.instance() or QApplication([])
+
+    def setUp(self) -> None:
+        self.core = FakeCommentCore()
+        self.window = AmadeusMainWindow(self.core)
+
+    def tearDown(self) -> None:
+        self.window.close()
+
+    def test_add_comment_without_selection_delegates_an_empty_selection(self) -> None:
+        with patch("amadeus_gui.main.main_window.QInputDialog.getMultiLineText", return_value=("General note", True)) as dialog:
+            self.window.add_comment_button.click()
+
+        self.assertEqual([("General note", "")], self.core.add_calls)
+        self.assertEqual("General comment for this chat:", dialog.call_args.args[2])
+
+    def test_edit_selected_comment_delegates_and_keeps_comments_tab_active(self) -> None:
+        self.window.right_panel.setCurrentIndex(self.window.right_panel.PROCESS_TAB_INDEX)
+        with patch("amadeus_gui.main.main_window.QInputDialog.getMultiLineText", return_value=("Updated note", True)):
+            self.window.right_panel.comment_edit_button.click()
+
+        self.assertEqual([("comment_1", "Updated note")], self.core.update_calls)
+        self.assertEqual(self.window.right_panel.COMMENTS_TAB_INDEX, self.window.right_panel.currentIndex())
+
+    def test_delete_selected_comment_confirms_then_delegates_and_refreshes(self) -> None:
+        self.window.right_panel.setCurrentIndex(self.window.right_panel.PROCESS_TAB_INDEX)
+        with patch("amadeus_gui.main.main_window.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes):
+            self.window.right_panel.comment_delete_button.click()
+
+        self.assertEqual(["comment_1"], self.core.delete_calls)
+        self.assertEqual(self.window.right_panel.COMMENTS_TAB_INDEX, self.window.right_panel.currentIndex())
+
+    def test_jump_from_comment_finds_visible_message_and_reports_missing_messages(self) -> None:
+        self.window._append_message("User", "Visible message", message_number=12)
+
+        self.window.right_panel.comment_jump_button.click()
+        self.assertEqual("Jumped to message 12.", self.window.status_label.text())
+
+        self.window._jump_to_message(99)
+        self.assertEqual("Message 99 is not visible in this chat.", self.window.status_label.text())
 
 
 if __name__ == "__main__":
