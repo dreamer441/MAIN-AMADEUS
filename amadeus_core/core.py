@@ -715,6 +715,14 @@ class AmadeusCore:
             selected_text=selected_text,
         )
 
+    def update_comment(self, comment_id: str, comment: str) -> Any:
+        """Update one comment through the Comments module."""
+        return self.comment_service.update_comment(comment_id, comment)
+
+    def delete_comment(self, comment_id: str) -> None:
+        """Delete one comment through the Comments module."""
+        self.comment_service.delete_comment(comment_id)
+
     def get_comments_panel_payload(self) -> dict[str, Any]:
         """Return comments for the current chat as a right-panel payload."""
         return self.comment_service.build_panel_payload(self.chat_history_store.get_current_chat_id())

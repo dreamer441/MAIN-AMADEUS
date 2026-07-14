@@ -37,6 +37,10 @@ class RightPanelWidget(QTabWidget):
     material_ask_requested = pyqtSignal(str, str)
     material_remove_requested = pyqtSignal(str)
     material_copy_reference_requested = pyqtSignal(str)
+    comment_edit_requested = pyqtSignal(str)
+    comment_delete_requested = pyqtSignal(str)
+    comment_jump_requested = pyqtSignal(int)
+    comment_refresh_requested = pyqtSignal()
 
     PROCESS_TAB_INDEX = 0
     CODE_TAB_INDEX = 1
@@ -51,6 +55,7 @@ class RightPanelWidget(QTabWidget):
         self.state = SidePanelState(compact_trace=initial_trace_text, detailed_trace=initial_trace_text)
         self._loading_sheets_panel = False
         self._sheet_rows_by_id: dict[str, dict] = {}
+        self._comment_rows_by_id: dict[str, dict] = {}
 
         self.addTab(self._build_process_monitor_tab(initial_trace_text), "Process Monitor")
         self.addTab(self._build_code_viewer_tab(), "Code Viewer")
@@ -373,19 +378,37 @@ class RightPanelWidget(QTabWidget):
         return tab
 
     def _build_comments_tab(self) -> QWidget:
-        """Build a read-only list of comments for the current chat."""
+        """Build comment selection and actions for the current chat."""
         tab = QWidget()
         layout = QVBoxLayout(tab)
         self.comments_title = QLabel("AMADEUS Comments")
         self.comments_title.setStyleSheet("font-size: 16px; font-weight: bold;")
         self.comments_meta = QLabel("Select chat text and press Add Comment to save a simple note.")
         self.comments_meta.setStyleSheet("color: #666; padding: 2px;")
+        self.comments_selector = QComboBox()
+        self.comments_selector.currentIndexChanged.connect(self._load_selected_comment)
+        action_row = QHBoxLayout()
+        self.comment_edit_button = QPushButton("Edit")
+        self.comment_delete_button = QPushButton("Delete")
+        self.comment_jump_button = QPushButton("Jump to Message")
+        self.comment_refresh_button = QPushButton("Refresh")
+        self.comment_edit_button.clicked.connect(lambda: self._emit_comment_action(self.comment_edit_requested))
+        self.comment_delete_button.clicked.connect(lambda: self._emit_comment_action(self.comment_delete_requested))
+        self.comment_jump_button.clicked.connect(self._emit_comment_jump_requested)
+        self.comment_refresh_button.clicked.connect(self.comment_refresh_requested.emit)
+        action_row.addWidget(self.comment_edit_button)
+        action_row.addWidget(self.comment_delete_button)
+        action_row.addWidget(self.comment_jump_button)
+        action_row.addWidget(self.comment_refresh_button)
         self.comments_viewer = QTextEdit()
         self.comments_viewer.setReadOnly(True)
-        self.comments_viewer.setPlaceholderText("Comments for the current chat will appear here.")
+        self.comments_viewer.setPlaceholderText("Select a comment to view its details.")
         layout.addWidget(self.comments_title)
         layout.addWidget(self.comments_meta)
+        layout.addWidget(self.comments_selector)
+        layout.addLayout(action_row)
         layout.addWidget(self.comments_viewer)
+        self._set_comment_action_state(None)
         return tab
 
     def show_waiting_trace(self) -> None:
@@ -796,12 +819,57 @@ class RightPanelWidget(QTabWidget):
             self.setCurrentIndex(self.COMMENTS_TAB_INDEX)
 
     def _render_comments_panel(self, payload: SidePanelPayload) -> None:
-        """Display saved comments for the current chat."""
+        """Load Core-provided comment rows into the selector."""
         count = payload.metadata.get("comment_count", 0)
+        comments = payload.metadata.get("comments") if isinstance(payload.metadata.get("comments"), list) else []
+        self._comment_rows_by_id = {
+            str(row.get("comment_id")): row
+            for row in comments
+            if isinstance(row, dict) and row.get("comment_id")
+        }
         self.comments_title.setText(payload.title)
         self.comments_meta.setText(f"Comments in this chat: {count}")
-        self.comments_viewer.setPlainText(payload.content)
+        self.comments_selector.clear()
+        for comment_id, row in self._comment_rows_by_id.items():
+            message_number = row.get("message_number")
+            label = f"Comment({message_number})" if isinstance(message_number, int) else "Comment(A)"
+            self.comments_selector.addItem(label, comment_id)
+        self._load_selected_comment(self.comments_selector.currentIndex())
+
+    def _load_selected_comment(self, index: int) -> None:
+        """Show readable content and target details for the selected comment."""
+        comment_id = self.comments_selector.itemData(index)
+        row = self._comment_rows_by_id.get(comment_id) if isinstance(comment_id, str) else None
+        self._set_comment_action_state(row)
+        if row is None:
+            self.comments_viewer.clear()
+            return
+        message_number = row.get("message_number")
+        target = f"Message {message_number}" if isinstance(message_number, int) else "General chat"
+        comment_type = str(row.get("comment_type") or "general").capitalize()
+        self.comments_viewer.setPlainText(f"{row.get('comment', '')}\n\nTarget: {target}\nType: {comment_type}")
         self.comments_viewer.moveCursor(QTextCursor.MoveOperation.Start)
+
+    def _set_comment_action_state(self, row: dict | None) -> None:
+        """Enable selected-comment actions without coupling them to chat requests."""
+        has_comment = row is not None
+        self.comment_edit_button.setEnabled(has_comment)
+        self.comment_delete_button.setEnabled(has_comment)
+        self.comment_jump_button.setEnabled(has_comment and isinstance(row.get("message_number"), int))
+
+    def _emit_comment_action(self, signal) -> None:
+        """Emit a selected comment id only when a valid row is active."""
+        comment_id = self.comments_selector.currentData()
+        if isinstance(comment_id, str) and comment_id in self._comment_rows_by_id:
+            signal.emit(comment_id)
+
+    def _emit_comment_jump_requested(self) -> None:
+        """Emit the selected message number only for message-attached comments."""
+        comment_id = self.comments_selector.currentData()
+        row = self._comment_rows_by_id.get(comment_id) if isinstance(comment_id, str) else None
+        message_number = row.get("message_number") if row is not None else None
+        if isinstance(message_number, int):
+            self.comment_jump_requested.emit(message_number)
 
     def render_chat_context(self, chat_context_text: str) -> None:
         """Show current chat title/description in the Memory tab by default."""
@@ -822,6 +890,8 @@ class RightPanelWidget(QTabWidget):
         self.side_ask_context.clear()
         self.side_ask_save_button.setDisabled(True)
         self.side_ask_new_chat_button.setDisabled(True)
+        self._comment_rows_by_id = {}
+        self.comments_selector.clear()
         self.comments_viewer.clear()
         self.render_chat_context(chat_context_text)
         self.setCurrentIndex(self.PROCESS_TAB_INDEX)

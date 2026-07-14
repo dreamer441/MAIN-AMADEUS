@@ -306,6 +306,10 @@ class AmadeusMainWindow(QMainWindow):
         self.right_panel.material_ask_requested.connect(self._ask_about_material)
         self.right_panel.material_remove_requested.connect(self._remove_material)
         self.right_panel.material_copy_reference_requested.connect(self._copy_material_reference)
+        self.right_panel.comment_edit_requested.connect(self._edit_comment_from_panel)
+        self.right_panel.comment_delete_requested.connect(self._delete_comment_from_panel)
+        self.right_panel.comment_jump_requested.connect(self._jump_to_message)
+        self.right_panel.comment_refresh_requested.connect(self._refresh_comments_panel)
 
         main_row.addLayout(chat_column, stretch=3)
         main_row.addWidget(self.right_panel, stretch=2)
@@ -912,14 +916,10 @@ class AmadeusMainWindow(QMainWindow):
     def _add_comment_from_selection(self) -> None:
         """Save a simple comment on the selected visible chat text."""
         selected_text = self._selected_chat_text()
-        if not selected_text:
-            self.status_label.setText("Select chat text before adding a comment.")
-            return
-
         comment, accepted = QInputDialog.getMultiLineText(
             self,
             "Add Comment",
-            "Comment for selected chat text:",
+            "Comment for selected chat text:" if selected_text else "General comment for this chat:",
             "",
         )
         if not accepted or not comment.strip():
@@ -931,6 +931,46 @@ class AmadeusMainWindow(QMainWindow):
             self.status_label.setText(f"Saved comment: {getattr(saved_comment, 'comment_id', 'comment')}")
         except Exception as error:
             self.status_label.setText(f"Could not save comment: {error}")
+
+    def _edit_comment_from_panel(self, comment_id: str) -> None:
+        """Edit the current selected comment through Core and refresh its panel."""
+        row = self.right_panel._comment_rows_by_id.get(comment_id)
+        if row is None:
+            return
+        comment, accepted = QInputDialog.getMultiLineText(
+            self,
+            "Edit Comment",
+            "Comment:",
+            str(row.get("comment") or ""),
+        )
+        if not accepted or not comment.strip():
+            return
+        try:
+            self.core.update_comment(comment_id, comment.strip())
+            self._refresh_comments_panel(switch_to_tab=True)
+            self.status_label.setText("Updated comment.")
+        except Exception as error:
+            self.status_label.setText(f"Could not update comment: {error}")
+
+    def _delete_comment_from_panel(self, comment_id: str) -> None:
+        """Confirm and delete a selected comment through Core."""
+        if QMessageBox.question(self, "Delete Comment", "Delete this comment?") != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.core.delete_comment(comment_id)
+            self._refresh_comments_panel(switch_to_tab=True)
+            self.status_label.setText("Deleted comment.")
+        except Exception as error:
+            self.status_label.setText(f"Could not delete comment: {error}")
+
+    def _jump_to_message(self, message_number: int) -> None:
+        """Focus the visible chat message linked to the selected comment."""
+        self.chat_history.moveCursor(QTextCursor.MoveOperation.Start)
+        if not self.chat_history.find(f"[{message_number}] "):
+            self.status_label.setText(f"Message {message_number} is not visible in this chat.")
+            return
+        self.chat_history.setFocus()
+        self.status_label.setText(f"Jumped to message {message_number}.")
 
     def _selected_chat_text(self) -> str:
         """Return selected chat text with Qt paragraph separators normalized."""

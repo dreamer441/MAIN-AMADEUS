@@ -77,5 +77,65 @@ class CodeViewerLineNumberTests(unittest.TestCase):
         self.assertEqual("1: first\n2: \n3: third", panel._line_labelled_code("first\n\nthird\n"))
 
 
+class CommentsPanelTests(unittest.TestCase):
+    """Verify the Comments tab exposes actions for the selected comment."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.application = QApplication.instance() or QApplication([])
+
+    def test_comments_panel_exposes_selected_comment_actions(self) -> None:
+        panel = RightPanelWidget("Ready")
+
+        panel.render_comments_payload({
+            "type": "comments",
+            "title": "AMADEUS Comments",
+            "content": "Comment(12) - Review.",
+            "metadata": {
+                "comment_count": 1,
+                "comments": [{
+                    "comment_id": "comment_1",
+                    "comment": "Review.",
+                    "message_number": 12,
+                    "comment_type": "selection",
+                }],
+            },
+        })
+
+        self.assertEqual("comment_1", panel.comments_selector.currentData())
+        self.assertTrue(panel.comment_jump_button.isEnabled())
+
+    def test_comment_actions_emit_only_for_valid_selected_rows(self) -> None:
+        panel = RightPanelWidget("Ready")
+        edits: list[str] = []
+        deletes: list[str] = []
+        jumps: list[int] = []
+        panel.comment_edit_requested.connect(edits.append)
+        panel.comment_delete_requested.connect(deletes.append)
+        panel.comment_jump_requested.connect(jumps.append)
+        panel.render_comments_payload({
+            "type": "comments",
+            "title": "AMADEUS Comments",
+            "content": "",
+            "metadata": {
+                "comment_count": 2,
+                "comments": [
+                    {"comment_id": "comment_1", "comment": "General.", "comment_type": "general"},
+                    {"comment_id": "comment_2", "comment": "Review.", "message_number": 12, "comment_type": "selection"},
+                ],
+            },
+        })
+
+        panel.comment_edit_button.click()
+        panel.comment_delete_button.click()
+        self.assertEqual(["comment_1"], edits)
+        self.assertEqual(["comment_1"], deletes)
+        self.assertFalse(panel.comment_jump_button.isEnabled())
+
+        panel.comments_selector.setCurrentIndex(1)
+        panel.comment_jump_button.click()
+        self.assertEqual([12], jumps)
+
+
 if __name__ == "__main__":
     unittest.main()
