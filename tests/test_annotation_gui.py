@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtTest import QTest
+from PyQt6.QtCore import QThread, Qt
+from PyQt6.QtTest import QSignalSpy, QTest
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from amadeus_gui.main.main_window import AmadeusMainWindow, ChatResponseWorker, MessageInput
@@ -103,6 +103,45 @@ class ProcessMonitorLiveEventTests(unittest.TestCase):
 
         self.assertEqual("Request Received", received[0]["title"])
         self.assertEqual(["event", "finished"], order)
+
+    def test_threaded_worker_delivers_live_event_before_final_payload_reconciliation(self) -> None:
+        final_events = [
+            {"sequence": 1, "title": "Request Received", "summary": "Message received."},
+            {"sequence": 2, "title": "Response Returned", "summary": "Response returned to GUI."},
+        ]
+        order: list[str] = []
+
+        class Core(FakeCommentCore):
+            def handle_user_message(self, _message: str, event_listener=None) -> dict[str, object]:
+                event_listener(final_events[0])
+                return {"response": "ok", "trace_events": final_events}
+
+        window = AmadeusMainWindow(Core())
+        worker = ChatResponseWorker(window.core, "hello")
+        thread = QThread()
+        worker.moveToThread(thread)
+
+        def receive_event(event: object) -> None:
+            order.append("event")
+            window._handle_process_event(event)
+
+        def receive_finished(result: object) -> None:
+            order.append("finished")
+            window._handle_response(result)
+
+        thread.started.connect(worker.run)
+        worker.process_event.connect(receive_event)
+        worker.finished.connect(receive_finished)
+        worker.finished.connect(thread.quit)
+        thread_finished = QSignalSpy(thread.finished)
+        thread.start()
+
+        self.assertTrue(thread_finished.wait(1000))
+
+        self.assertEqual(["event", "finished"], order)
+        self.assertEqual(final_events, window._latest_trace_events)
+        self.assertIn("Response Returned", window.right_panel.process_monitor.toPlainText())
+        window.close()
 
     def test_panel_renders_live_event_list(self) -> None:
         panel = RightPanelWidget("Ready")

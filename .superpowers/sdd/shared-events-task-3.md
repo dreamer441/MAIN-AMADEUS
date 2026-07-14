@@ -16,3 +16,8 @@ Validation:
 - `git diff --check` passed.
 
 Known limitation: persistent process histories and Process Monitor V2 remain out of scope.
+
+Reviewer follow-up:
+
+- Added a real `QThread` regression test that verifies queued live-event delivery precedes `finished` and that the final payload replaces the incremental monitor state.
+- Validation rerun: `py -3 -m unittest tests.test_annotation_gui tests.test_process_events -v` passed (26 tests); `py -3 -m compileall .` and `git diff --check` passed.
