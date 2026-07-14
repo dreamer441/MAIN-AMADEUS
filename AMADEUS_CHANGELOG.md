@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-14 - Shared Process Events: Task 1 Foundation
+
+- Date: 2026-07-14
+- Phase: Shared Process Events - Task 1
+- Feature or fix: Added validated framework-independent process-event recording and legacy trace compatibility.
+- What changed: Added immutable `ProcessEvent` records, validated enums, ordered run lifecycle emission, fault-isolated subscriptions, and a `TraceLogger` facade that maps legacy category/level calls to the emitter while retaining historic text and payload aliases.
+- Files/modules affected: `amadeus_trace`, focused process-event tests, and trace documentation.
+- User-visible behavior: Existing Process Monitor trace text and legacy structured fields remain available; the backend can now provide validated ordered events to later lifecycle and GUI work.
+- Architecture notes: `ProcessEventEmitter` has no PyQt dependency and is the source of truth for `TraceLogger` payload output. Core/module lifecycle ownership and GUI live delivery are intentionally not included.
+- Tests performed: `py -3 -m unittest tests.test_process_events tests.test_annotation_core -v` passed; full discovery and compile checks are recorded in the Task 1 report.
+- Known limitations: Active-chat code does not yet emit the complete lifecycle, and no GUI listener bridge has been added.
+
 ## 2026-07-14 - Phase 6 Follow-Up: Comment Target And Jump Fixes
 
 - Date: 2026-07-14

@@ -5,6 +5,8 @@ The logger intentionally swallows trace failures because diagnostics must never 
 AMADEUS from answering.
 """
 
+from amadeus_trace.process_event import BrainRole, ProcessEventStatus, ProcessEventType
+from amadeus_trace.process_event_emitter import ProcessEventEmitter
 from amadeus_trace.trace_session import TraceSession
 
 
@@ -12,6 +14,7 @@ class TraceLogger:
     """Small façade used by Core and modules to record real execution events."""
 
     def __init__(self) -> None:
+        self.emitter = ProcessEventEmitter()
         self.current_session: TraceSession | None = None
 
     def start_session(self) -> TraceSession:
@@ -19,6 +22,11 @@ class TraceLogger:
         # A new session per message makes the right-side Process Monitor readable.
         # Later persistent logs can be added separately without changing this live view behavior.
         self.current_session = TraceSession()
+        self.emitter.start_run(
+            source_module="trace_logger",
+            title="Trace Session Started",
+            summary="Process Monitor session started.",
+        )
         return self.current_session
 
     def add_event(
@@ -32,7 +40,17 @@ class TraceLogger:
         try:
             if self.current_session is None:
                 self.start_session()
+            event_type, status = self._map_legacy_event(category, level)
+            # Keep the historic public session object useful for direct consumers.
             self.current_session.add_event(category, title, message, level)
+            self.emitter.emit(
+                source_module=category.strip().lower() or "system",
+                brain_role=BrainRole.SYSTEM,
+                event_type=event_type,
+                status=status,
+                title=title,
+                summary=message,
+            )
         except Exception:
             # Trace is diagnostic only. AMADEUS must still answer if monitoring fails.
             return
@@ -42,15 +60,41 @@ class TraceLogger:
         try:
             if self.current_session is None:
                 return "No trace session started."
-            return self.current_session.to_text(mode=mode)
+            if not self.emitter.events:
+                return "No trace events recorded."
+            render = "to_detailed_text" if mode.strip().lower() == "detailed" else "to_compact_text"
+            return "\n\n".join(getattr(event, render)() for event in self.emitter.events)
         except Exception as error:
             return f"Process Monitor error: {error}"
 
-    def get_trace_events(self) -> list[dict[str, str]]:
+    def get_trace_events(self) -> list[dict[str, object]]:
         """Return structured events for GUI mode switching and future exports."""
         try:
             if self.current_session is None:
                 return []
-            return self.current_session.to_list()
+            return [event.to_dict() for event in self.emitter.events]
         except Exception:
             return []
+
+    @staticmethod
+    def _map_legacy_event(category: str, level: str) -> tuple[ProcessEventType, ProcessEventStatus]:
+        """Translate tolerant legacy trace inputs to validated process fields."""
+        clean_category = category.strip().lower()
+        clean_level = level.strip().lower()
+        event_type = {
+            "input": ProcessEventType.OBJECTIVE,
+            "annotation": ProcessEventType.STEP,
+            "routing": ProcessEventType.DECISION,
+            "file": ProcessEventType.TOOL,
+            "llm": ProcessEventType.TOOL,
+            "module": ProcessEventType.STEP,
+            "output": ProcessEventType.RESULT,
+            "error": ProcessEventType.ERROR,
+        }.get(clean_category, ProcessEventType.STEP)
+        if clean_level == "error":
+            return ProcessEventType.ERROR, ProcessEventStatus.FAILED
+        if clean_level == "warning":
+            return ProcessEventType.WARNING, ProcessEventStatus.COMPLETED
+        if clean_level == "success":
+            return event_type, ProcessEventStatus.COMPLETED
+        return event_type, ProcessEventStatus.RUNNING

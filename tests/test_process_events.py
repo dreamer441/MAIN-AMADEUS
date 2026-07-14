@@ -1,0 +1,109 @@
+"""Tests for validated process events and legacy trace compatibility."""
+
+import unittest
+
+from amadeus_trace import BrainRole, ProcessEventEmitter, ProcessEventStatus, ProcessEventType, TraceLogger
+
+
+class ProcessEventEmitterTests(unittest.TestCase):
+    """Verify ordered delivery, validation, and listener isolation."""
+
+    def test_start_emit_complete_delivers_ordered_events(self) -> None:
+        received = []
+        emitter = ProcessEventEmitter()
+        emitter.subscribe(received.append)
+
+        run_id = emitter.start_run(source_module="core", title="Request received", summary="Message received.")
+        emitter.emit(
+            source_module="context_builder",
+            brain_role=BrainRole.ACTIVE,
+            event_type=ProcessEventType.CONTEXT,
+            status=ProcessEventStatus.COMPLETED,
+            title="Context ready",
+            summary="Selected context types: recent conversation.",
+        )
+        emitter.complete_run(title="Response returned", summary="Response returned to GUI.")
+
+        self.assertEqual([1, 2, 3], [event.sequence for event in received])
+        self.assertTrue(all(event.run_id == run_id for event in received))
+
+    def test_listener_failure_does_not_stop_event_recording(self) -> None:
+        emitter = ProcessEventEmitter()
+        emitter.subscribe(lambda event: (_ for _ in ()).throw(RuntimeError("display failed")))
+
+        emitter.start_run(source_module="core", title="Request received", summary="Message received.")
+
+        self.assertEqual(1, len(emitter.events))
+
+    def test_progress_and_metadata_are_validated_and_copied(self) -> None:
+        emitter = ProcessEventEmitter()
+        emitter.start_run(source_module="core", title="Request received", summary="Message received.")
+        metadata = {"context_type": "recent_conversation"}
+        event = emitter.emit(
+            source_module="context_builder",
+            brain_role=BrainRole.ACTIVE,
+            event_type=ProcessEventType.CONTEXT,
+            status=ProcessEventStatus.RUNNING,
+            title="Context building",
+            summary="Selecting context.",
+            progress=0.5,
+            metadata=metadata,
+        )
+        metadata["context_type"] = "private memory"
+
+        self.assertEqual(0.5, event.progress)
+        self.assertEqual("recent_conversation", event.metadata["context_type"])
+        with self.assertRaises(ValueError):
+            emitter.emit(
+                source_module="core",
+                brain_role=BrainRole.SYSTEM,
+                event_type=ProcessEventType.STEP,
+                status=ProcessEventStatus.RUNNING,
+                title="Bad progress",
+                summary="Invalid progress.",
+                progress=1.1,
+            )
+
+    def test_invalid_enum_values_are_rejected(self) -> None:
+        emitter = ProcessEventEmitter()
+        emitter.start_run(source_module="core", title="Request received", summary="Message received.")
+
+        with self.assertRaises(ValueError):
+            emitter.emit(
+                source_module="core",
+                brain_role="active",  # type: ignore[arg-type]
+                event_type=ProcessEventType.STEP,
+                status=ProcessEventStatus.RUNNING,
+                title="Invalid role",
+                summary="Enum validation must reject strings.",
+            )
+
+
+class TraceLoggerCompatibilityTests(unittest.TestCase):
+    """Verify legacy trace calls remain renderable through the emitter facade."""
+
+    def test_legacy_trace_text_and_payload_fields_are_preserved(self) -> None:
+        logger = TraceLogger()
+        logger.start_session()
+        logger.add_event("routing", "Request Route", "Chat route selected.", level="success")
+
+        event = logger.get_trace_events()[-1]
+        self.assertIn("[Request Route]", logger.get_trace_text())
+        self.assertIn("Level: success", logger.get_trace_text(mode="detailed"))
+        self.assertEqual("routing", event["category"])
+        self.assertEqual("Chat route selected.", event["message"])
+        self.assertEqual("success", event["level"])
+        self.assertEqual("completed", event["status"])
+        self.assertEqual("decision", event["event_type"])
+
+    def test_legacy_warning_level_remains_warning(self) -> None:
+        logger = TraceLogger()
+        logger.start_session()
+        logger.add_event("module", "Partial result", "A fallback was used.", level="warning")
+
+        self.assertEqual("warning", logger.get_trace_events()[-1]["level"])
+        self.assertEqual("warning", logger.current_session.events[-1].level)
+
+
+if __name__ == "__main__":
+    unittest.main()
