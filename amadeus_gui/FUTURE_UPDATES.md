@@ -11,6 +11,12 @@
 - Add safer close/cancel behavior for long-running LLM calls.
 - Keep GUI comments updated when layout or worker flow changes.
 
+## Flow Shell Follow-up
+
+- Add Flow-specific keyboard send behavior and richer transcript formatting without changing its Core-only boundary.
+- Replace Code, Mind Map, and Habit Tracker foundation pages only when their independent Core routes and module contracts are available.
+- Add Flow-specific Process Monitor controls only if they preserve the existing safe shared-event boundary.
+
 ## Future GUI Panel Improvements
 
 - Improve suggestion popup positioning and add mouse-free filtering feedback.

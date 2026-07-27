@@ -34,6 +34,15 @@ AMADEUS Core is the lightweight coordinator. It routes user messages to the corr
 - Core records only its own request-routing and terminal boundaries; it does not expose prompt or selected context values in trace metadata.
 - A failed Chat event or missing Chat registration produces `Request Failed` while preserving the established user-facing error response.
 
+## Flow Chat Routing
+
+- Core composes and registers isolated Flow storage, Flow context building, Flow service, and metadata-only dedicated-chat registry modules.
+- `handle_flow_message()` reuses the shared Chat module, LLM client, identity prompt builder, and Process Monitor event stream without changing normal chat routing.
+- Flow context contains only recent Flow history and `[AVAILABLE DEDICATED CHATS]` metadata; dedicated-chat message bodies are never loaded or injected.
+- Successful Flow exchanges persist as one atomic two-message update under `data/flow_chat`; failed Flow execution leaves no partial exchange and returns a generic safe failure response.
+- Flow emits the same ordered, safe shared Process Monitor events to a live listener and the final response payload; event rows describe execution boundaries only and contain no prompt, response, or dedicated-chat body content.
+- The registry reads current dedicated-chat metadata on each Flow context build, so live dedicated-chat create, title/description update, and delete mutations are reflected without Flow owning a second index.
+
 ## Important boundary
 
 Core routes. It should not become a place for large feature logic. If Core starts growing too much, the logic should move into a module such as Context Builder, Project File Reader, Annotation Module, or Storage.

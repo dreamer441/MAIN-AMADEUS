@@ -20,6 +20,13 @@ Do not add memory, autonomy, file editing, mind map, or reasoning implementation
 - Keep normal chat focused on summaries/explanations while exact tools use explicit annotations.
 - Add optional per-chat mode/profile routing later, but keep profile logic outside Core.
 
+## Flow Chat Future Updates
+
+- Add explicit user-selected dedicated-chat retrieval only after its permission and content boundaries are designed.
+- Add token-aware Flow history trimming when a shared prompt budget exists.
+- Keep future Flow persistence changes transactional at the complete user/AMADEUS exchange boundary.
+- Do not expand Flow's Layer 1 registry beyond metadata-only id, title, and description without an explicit permission and content-boundary design.
+
 ## Future Multi-Chat Improvements
 
 - Add chat rename support through Storage and GUI.

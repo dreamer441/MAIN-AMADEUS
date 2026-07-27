@@ -52,6 +52,7 @@ class AmadeusChatModule:
         callable_context: str | None = None,
         identity_prompt: str | None = None,
         trace_logger: TraceLogger | None = None,
+        raise_llm_errors: bool = False,
     ) -> str:
         """Return an AMADEUS response for the provided user message."""
         clean_message = message.strip()
@@ -97,6 +98,8 @@ class AmadeusChatModule:
                 "Configured LLM could not return a response.",
                 level="error",
             )
+            if raise_llm_errors:
+                raise
             return f"AMADEUS LLM error: {error}"
 
     def _build_system_prompt(self, identity_prompt: str | None = None) -> str:

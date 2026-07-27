@@ -17,9 +17,11 @@ from annotation_module.annotations import ExportAnnotation, FileAnnotation, Iden
 from amadeus_chat import AmadeusChatModule
 from amadeus_core.module_registry import ModuleRegistry
 from amadeus_trace import TraceLogger
+from chat_registry import ChatRegistry
 from context_builder import ChatContextBuilder
 from identity_module import IdentityPromptBuilder, IdentityService
 from export_module import ChatExportService
+from flow_chat import FlowChatService, FlowChatStore, FlowContextBuilder
 from llm_client import OllamaClient
 from materials_module import MaterialsService
 from memory_module import MemoryService
@@ -60,6 +62,11 @@ class AmadeusCore:
         # Storage persists visible chat history. Memory is intentionally separate because
         # memory is selected durable context, not a raw transcript.
         self.chat_history_store = ChatHistoryStore(self.project_root)
+
+        # Flow has isolated history and can see dedicated-chat metadata only through the registry.
+        self.flow_chat_store = FlowChatStore(self.project_root)
+        self.chat_registry = ChatRegistry(self.chat_history_store)
+        self.flow_context_builder = FlowContextBuilder(self.flow_chat_store, self.chat_registry)
 
         # Memory V1 is explicit only: Dato uses [memory] to decide what becomes durable.
         self.memory_service = MemoryService(self.project_root)
@@ -135,7 +142,17 @@ class AmadeusCore:
         """Register the first built-in modules needed by the shell."""
         # Core stores module entry points, not implementation details. Future modules should be
         # registered here or by a later plugin loader, then called through their public API only.
-        self.module_registry.register("chat", AmadeusChatModule(llm_client=self.llm_client))
+        chat_module = AmadeusChatModule(llm_client=self.llm_client)
+        self.flow_chat_service = FlowChatService(
+            chat_module=chat_module,
+            flow_context_builder=self.flow_context_builder,
+            flow_chat_store=self.flow_chat_store,
+            identity_prompt_builder=self.identity_prompt_builder,
+        )
+        self.module_registry.register("chat", chat_module)
+        self.module_registry.register("flow_chat", self.flow_chat_service)
+        self.module_registry.register("flow_context_builder", self.flow_context_builder)
+        self.module_registry.register("chat_registry", self.chat_registry)
         self.module_registry.register("identity", self.identity_service)
         self.module_registry.register("memory", self.memory_service)
         self.module_registry.register("sheets", self.sheet_service)
@@ -335,6 +352,45 @@ class AmadeusCore:
             )
             response = f"AMADEUS error: {error}"
             return self._build_response_payload(response, trace_logger)
+
+
+    def handle_flow_message(
+        self,
+        message: str,
+        event_listener: Callable[[dict[str, object]], None] | None = None,
+    ) -> dict[str, Any]:
+        """Handle the isolated Flow home conversation without changing normal chat routing."""
+        trace_logger = TraceLogger()
+        trace_logger.start_session()
+        if event_listener is not None:
+            trace_logger.emitter.subscribe(lambda event: event_listener(event.to_dict()))
+
+        clean_message = message.strip()
+        trace_logger.add_event("input", "Flow Request Received", "Flow message received from GUI.")
+        if not clean_message:
+            response = "AMADEUS needs a message before she can respond."
+            trace_logger.complete_run(title="Flow Output Returned", summary="Empty Flow response returned to GUI.")
+            return self._build_response_payload(response, trace_logger)
+
+        try:
+            execution = self.flow_chat_service.handle_message(clean_message, trace_logger)
+            if not execution.succeeded:
+                trace_logger.fail_run(title="Flow Request Failed", summary="The Flow request could not be completed.")
+                response = "AMADEUS could not complete that Flow request. Please try again."
+            else:
+                trace_logger.complete_run(title="Flow Output Returned", summary="Flow response returned to GUI.")
+                response = execution.response
+            return self._build_response_payload(response, trace_logger)
+        except Exception:
+            trace_logger.fail_run(title="Flow Request Failed", summary="The Flow request could not be completed.")
+            return self._build_response_payload(
+                "AMADEUS could not complete that Flow request. Please try again.",
+                trace_logger,
+            )
+
+    def load_flow_history(self) -> list[Any]:
+        """Return persisted Flow messages for the GUI without exposing Flow storage."""
+        return self.flow_chat_store.load_messages()
 
 
     def _handle_sheet_prompt_request(

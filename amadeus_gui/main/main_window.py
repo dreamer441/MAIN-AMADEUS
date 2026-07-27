@@ -24,12 +24,15 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QStackedWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from amadeus_core import AmadeusCore
+from amadeus_gui.flow_chat_view import FlowChatView
+from amadeus_gui.module_placeholder_view import ModulePlaceholderView
 from amadeus_gui.side import RightPanelWidget
 
 
@@ -234,6 +237,10 @@ class NewChatDialog(QDialog):
         return self.description_input.toPlainText().strip()
 
 
+class DedicatedChatView(QWidget):
+    """Reusable container for the existing dedicated-chat controls and workspace."""
+
+
 class AmadeusMainWindow(QMainWindow):
     """Main desktop window for the first AMADEUS feedback loop."""
 
@@ -275,8 +282,8 @@ class AmadeusMainWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         """Create chat controls, right-side tabs, annotation suggestions, and input."""
-        root = QWidget()
-        layout = QVBoxLayout(root)
+        self.dedicated_chat_view = DedicatedChatView()
+        layout = QVBoxLayout(self.dedicated_chat_view)
 
         title = QLabel("AMADEUS")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -353,7 +360,41 @@ class AmadeusMainWindow(QMainWindow):
         layout.addWidget(self.annotation_suggestion_box)
         layout.addLayout(input_row)
 
-        self.setCentralWidget(root)
+        self.flow_chat_view = FlowChatView(self.core)
+        self.code_view = ModulePlaceholderView("Code", "A focused workspace for future coding tasks.")
+        self.mind_map_view = ModulePlaceholderView("Mind Map", "A visual space for future idea mapping.")
+        self.habit_tracker_view = ModulePlaceholderView("Habit Tracker", "A future home for intentional habit tracking.")
+        self.views = QStackedWidget()
+        self.views.addWidget(self.flow_chat_view)
+        self.views.addWidget(self.dedicated_chat_view)
+        self.views.addWidget(self.code_view)
+        self.views.addWidget(self.mind_map_view)
+        self.views.addWidget(self.habit_tracker_view)
+
+        shell = QWidget()
+        shell_layout = QHBoxLayout(shell)
+        sidebar = QVBoxLayout()
+        sidebar_title = QLabel("AMADEUS")
+        sidebar_title.setStyleSheet("font-size: 18px; font-weight: bold; padding: 8px;")
+        sidebar.addWidget(sidebar_title)
+        self.navigation_buttons: dict[str, QPushButton] = {}
+        for index, label in enumerate(("Flow Chat", "Chats", "Code", "Mind Map", "Habit Tracker")):
+            button = QPushButton(label)
+            button.setCheckable(True)
+            button.clicked.connect(lambda _checked, view_index=index: self._select_view(view_index))
+            self.navigation_buttons[label] = button
+            sidebar.addWidget(button)
+        sidebar.addStretch()
+        shell_layout.addLayout(sidebar)
+        shell_layout.addWidget(self.views, stretch=1)
+        self.setCentralWidget(shell)
+        self._select_view(0)
+
+    def _select_view(self, index: int) -> None:
+        """Switch persistent pages without recreating any chat or module state."""
+        self.views.setCurrentIndex(index)
+        for button_index, button in enumerate(self.navigation_buttons.values()):
+            button.setChecked(button_index == index)
 
 
     def _build_chat_control_row(self) -> QHBoxLayout:
@@ -1069,7 +1110,7 @@ class AmadeusMainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt uses camelCase names.
         """Prevent closing while a background chat request is still running."""
-        if self._active_threads:
+        if self._active_threads or self.flow_chat_view.has_active_workers():
             self.status_label.setText("AMADEUS is still thinking. Wait for the response before closing.")
             event.ignore()
             return

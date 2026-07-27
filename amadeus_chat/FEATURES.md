@@ -45,3 +45,10 @@
 
 - Chat prompt construction now tells the LLM that callable context selected by annotations is the primary source for that request.
 - This especially protects `[export][use][chat][range] prompt` from being overridden by current-chat assumptions.
+
+## Flow Prompt Reuse
+
+- Flow reuses the Chat module's LLM boundary through its separate Core route.
+- Flow receives preformatted Layer 0 recent Flow history and Layer 1 dedicated-chat registry metadata as distinct context sections.
+- Layer 1 contains only chat id, title, and description; Flow never injects dedicated-chat message bodies.
+- Flow LLM request and response boundaries participate in the same safe shared Process Monitor event lifecycle as normal chat.

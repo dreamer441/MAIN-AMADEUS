@@ -31,3 +31,9 @@ The right side of the window is now a tabbed work panel. Process Monitor shows r
 ## Memory Panel
 
 The right panel now includes a Memory tab. `[memory][list]` and save actions update this tab so saved context can be inspected without filling the main chat transcript.
+
+## Flow Navigation Shell
+
+The persistent sidebar opens on Flow Chat and retains its pages while navigating. Flow Chat is a separate, Core-mediated conversation with its own transcript, input, and event-only Process Monitor. The existing dedicated Chats page keeps its chat-management controls and full right-side workspace.
+
+Code, Mind Map, and Habit Tracker are intentionally visible foundation-pending pages, not implemented module workflows. Flow receives history and live shared process events through Core; the GUI does not access Flow or dedicated-chat storage directly.

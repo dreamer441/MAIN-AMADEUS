@@ -38,3 +38,7 @@
 
 - [ ] Add per-source prompt templates for sheet/export/panel/current contexts instead of one generic callable context block.
 - [ ] Add source citations or message-number references in AMADEUS answers when using exported segments.
+
+## Flow Prompt Future Work
+
+- Preserve Flow's metadata-only dedicated-chat boundary if future Flow prompt templates or retrieval options are added.

@@ -17,6 +17,16 @@
 - GUI response handling supports Core's dictionary payload: response text, compact trace, detailed trace, structured trace events, and side-panel data.
 - Contains comments explaining GUI/Core separation, worker threading, trace display, response payload handling, and multi-chat UI safety.
 
+## Flow Chat Navigation Shell
+
+- `AmadeusMainWindow` is a persistent sidebar shell with Flow Chat selected at startup.
+- Flow Chat keeps its own persistent history, Core-owned Flow request route, background worker, live Process Monitor, and safe busy/error recovery.
+- The existing dedicated-chat surface remains intact under the `Chats` navigation page, including chat management, annotations, and the full right-side workspace.
+- Code, Mind Map, and Habit Tracker are visibly named foundation-pending pages that retain their widgets when navigating.
+- The GUI receives Flow history through Core and never reads Flow storage directly.
+- Flow renders shared Process Monitor events as they arrive and replaces that provisional view with Core's completed event payload.
+- Code, Mind Map, and Habit Tracker are named placeholder areas only; they do not expose module routes or functionality.
+
 The Process Monitor shows real events such as input received, annotation check, routing decision, chat module use, LLM call status, errors, and output ready.
 
 ## Multiline Input and Right Panel v1

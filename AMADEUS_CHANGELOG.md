@@ -2,6 +2,54 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-27 - Flow Chat: Documentation
+
+- Date: 2026-07-27
+- Phase: Flow Chat GUI Shell - Task 4
+- Feature or fix: Documented current Flow Chat behavior and boundaries.
+- What changed: Updated root, GUI, Chat, and Core documentation; added Flow module documentation covering the navigation shell, separate Flow storage, Layer 0 Flow history, Layer 1 metadata-only registry context, live metadata mutations, and shared Process Monitor events.
+- Files/modules affected: Root README, `amadeus_gui`, `amadeus_chat`, `amadeus_core`, `flow_chat`, and this changelog.
+- User-visible behavior: Documentation now states that AMADEUS starts on Flow, dedicated Chats remain separate, and Code, Mind Map, and Habit Tracker are foundation-pending pages.
+- Architecture notes: Flow receives only dedicated-chat `chat_id`, title, and description, never message bodies; shared events remain diagnostic-only and Core-mediated.
+- Tests performed: Documentation-only change; no runtime tests run.
+- Known limitations: Dedicated-chat content retrieval, Flow token-aware history budgeting, and functional Code, Mind Map, and Habit Tracker routes are not implemented.
+
+## 2026-07-27 - Flow Chat: GUI Shell
+
+- Date: 2026-07-27
+- Phase: Flow Chat GUI Shell - Task 3
+- Feature or fix: Added the persistent Flow Chat home and navigation shell.
+- What changed: The main window now retains five sidebar pages: Flow Chat, the existing dedicated Chats surface, and named Code, Mind Map, and Habit Tracker foundations. Flow loads Core-provided history, sends requests through a QThread worker to `handle_flow_message`, streams Process Monitor events, and recovers its input after safe failures.
+- Files/modules affected: `amadeus_gui`, `amadeus_core`, focused headless GUI tests, and GUI documentation.
+- User-visible behavior: AMADEUS opens on Flow Chat; switching pages preserves each page's widgets and drafts. Dedicated-chat controls and its right-side workspace remain available under Chats.
+- Architecture notes: Flow history crosses the GUI boundary through `AmadeusCore.load_flow_history`; the GUI does not access Flow storage. Dedicated chat retains its existing right-panel renderer, while Flow has a focused event-only Process Monitor to avoid exposing dedicated-chat workspace actions.
+- Tests performed: `py -3 -m unittest tests.test_flow_chat_gui -v`, `py -3 -m unittest tests.test_annotation_gui -v`, and `py -3 -m compileall .` passed.
+- Known limitations: Code, Mind Map, and Habit Tracker are intentional named placeholders pending independent module routes.
+
+## 2026-07-27 - Flow Chat: Task 2 Review Fixes
+
+- Date: 2026-07-27
+- Phase: Flow Chat GUI Shell - Task 2 review fixes
+- Feature or fix: Made Flow exchange persistence atomic and hardened Flow failures.
+- What changed: Flow now builds both exchange records before one locked atomic replacement, uses an explicit LLM execution result instead of Process Monitor state to decide persistence, and returns a generic safe Flow failure payload for failed execution or unexpected exceptions.
+- Files/modules affected: `flow_chat`, `amadeus_chat`, `amadeus_core`, and focused Flow tests.
+- User-visible behavior: Failed Flow requests do not expose backend errors or add partial history; normal chat behavior is unchanged.
+- Architecture notes: Process Monitor remains diagnostic-only. Flow execution outcome is independent of trace event recording or listener delivery.
+- Tests performed: Focused Flow, Core/process-event tests, and compile validation are recorded with this delivery.
+- Known limitations: Flow still exposes dedicated-chat metadata only; token-aware history trimming is not implemented.
+
+## 2026-07-27 - Flow Chat: Context And Core Route
+
+- Date: 2026-07-27
+- Phase: Flow Chat GUI Shell - Task 2
+- Feature or fix: Added the isolated Flow context builder, execution service, and Core request route.
+- What changed: Flow now builds bounded Flow-only history plus separately formatted `[AVAILABLE DEDICATED CHATS]` metadata from the metadata-only registry. Core routes Flow requests through the existing Chat module and identity builder, emits ordered shared lifecycle events, and stores only successful Flow user/assistant exchanges.
+- Files/modules affected: `flow_chat`, `amadeus_core`, focused Flow tests, and Core documentation.
+- User-visible behavior: Flow requests return the normal response payload with Flow-specific Process Monitor events while dedicated chat behavior and history remain unchanged.
+- Architecture notes: Dedicated-chat bodies are not loaded by Flow context. Core retains trace lifecycle and event-listener ownership; Flow service owns Flow context coordination and isolated persistence.
+- Tests performed: `py -3 -m unittest tests.test_flow_chat -v` passed 12 tests. Full compile validation is recorded with the task delivery.
+- Known limitations: Flow exposes metadata only; explicit dedicated-chat content retrieval and token-aware history budgeting are not implemented.
+
 ## 2026-07-14 - Shared Process Events: Foundation Documentation And Release
 
 - Date: 2026-07-14

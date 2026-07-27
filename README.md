@@ -14,7 +14,7 @@ This first rebuild is intentionally small. It creates a working shell with:
 
 ## Current Behavior
 
-The app opens a desktop window. You can type a message, press Send or Enter, and AMADEUS routes it through Core to the Chat module. The top bar has a simple chat selector with New Chat and Delete Chat controls. The right panel has Process Monitor and Code Viewer tabs. The Process Monitor shows real execution events from the latest request, such as input received, annotation check, routing decision, LLM call status, errors, and output ready.
+The app opens on the Flow Chat home page. The persistent sidebar switches between Flow Chat, dedicated Chats, and named Code, Mind Map, and Habit Tracker foundation pages. Flow and dedicated Chats are separate conversations: Flow has its own local history, while the existing dedicated-chat selector, New Chat/Delete Chat controls, annotations, and right-side workspace remain under Chats. The Process Monitor shows real execution events from the latest request, not hidden reasoning.
 
 Chat now uses the local Ollama LLM client. The default lightweight model is `llama3.2:latest`.
 
@@ -113,6 +113,14 @@ data/chats/chats_index.json
 ```
 
 Each conversation has its own JSONL file. The GUI loads the active chat on startup and reloads history when you switch chats. Chat history is local runtime data and is ignored by git.
+
+## Flow Chat
+
+Flow is the home conversation, distinct from the dedicated chats managed on the Chats page. Its local JSONL history is stored separately under `data/flow_chat/`, so dedicated-chat selection or deletion cannot affect Flow.
+
+For a Flow request, Core supplies two separate context layers: Layer 0 is recent Flow history; Layer 1 is the current dedicated-chat registry metadata. Layer 1 includes only each chat's id, title, and description, never dedicated-chat message bodies. The registry reflects dedicated-chat creation, metadata edits, and deletion when Flow next builds context.
+
+Flow and dedicated chat requests use the shared Process Monitor event system. The Flow page renders safe live event rows while a request runs, then reconciles them with Core's final event payload.
 
 ## Development Workflow Rules
 
