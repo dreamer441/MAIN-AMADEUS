@@ -428,7 +428,7 @@ class AmadeusCore:
         """Return persisted Flow messages for the GUI without exposing Flow storage."""
         return self.flow_chat_store.load_messages()
 
-    def subscribe_mind_map(self, listener: Callable[[dict[str, Any]], None]) -> None:
+    def subscribe_mind_map(self, listener: Callable[[dict[str, Any]], None]) -> Callable[[], None]:
         """Subscribe a GUI or adapter to completed graph changes through Core."""
         if not callable(listener):
             raise ValueError("listener must be callable")
@@ -440,7 +440,7 @@ class AmadeusCore:
                 if key in event
             })
 
-        self.mind_map_module.subscribe(publish_safe_event)
+        return self.mind_map_module.subscribe(publish_safe_event)
 
     def get_mind_map_snapshot(self) -> Any:
         """Return the active graph snapshot for a Core-mediated view refresh."""
@@ -457,6 +457,10 @@ class AmadeusCore:
     def move_mind_map_node(self, node_id: str, position_x: float, position_y: float, **fields: Any) -> Any:
         """Persist a graph node position without exposing graph storage to the GUI."""
         return self.mind_map_module.move_node(node_id, position_x, position_y, **fields)
+
+    def move_mind_map_nodes(self, positions: dict[str, tuple[float, float]]) -> None:
+        """Persist a complete layout projection in one graph transaction."""
+        self.mind_map_module.move_nodes(positions)
 
     def delete_mind_map_node(self, node_id: str, **fields: Any) -> None:
         """Delete one node and its connected links through the Mind Map module."""

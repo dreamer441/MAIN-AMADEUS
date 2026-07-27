@@ -22,16 +22,19 @@ from PyQt6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QSplitter,
-    QStackedWidget,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from mindmap.gui.items import GraphLinkItem, GraphNodeItem
+from mindmap.gui.physics import GraphPhysics
 from mindmap.models import GraphLink, GraphNode, GraphSnapshot
 
 
@@ -70,7 +73,7 @@ class MindMapCanvas(QGraphicsView):
     def __init__(self, scene: QGraphicsScene, parent: QWidget | None = None) -> None:
         super().__init__(scene, parent)
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
-        self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+        self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
         self.setSceneRect(QRectF(-5000, -5000, 10000, 10000))
@@ -78,6 +81,12 @@ class MindMapCanvas(QGraphicsView):
     def wheelEvent(self, event) -> None:  # noqa: N802 - Qt naming.
         factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
         self.scale(factor, factor)
+
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 - Qt naming.
+        item = self.itemAt(event.pos())
+        if isinstance(item, GraphNodeItem):
+            self.centerOn(item)
+        super().mouseDoubleClickEvent(event)
 
 
 class MindMapWorker(QObject):
@@ -228,12 +237,15 @@ class MindMapView(QWidget):
         self.canvas = MindMapCanvas(self.scene, self)
         self.node_items: dict[str, GraphNodeItem] = {}
         self.link_items: dict[str, GraphLinkItem] = {}
+        self._nodes_by_id: dict[str, GraphNode] = {}
+        self.physics: GraphPhysics | None = None
         self._refreshing = False
         self._busy = False
         self._refresh_pending = False
         self._after_refresh: list[Callable[[], None]] = []
         self._active_threads: list[QThread] = []
         self._active_workers: list[MindMapWorker] = []
+        self._unsubscribe_graph_notifications: Callable[[], None] | None = None
 
         self._build_ui()
         self.scene.selectionChanged.connect(self._show_selection)
@@ -241,9 +253,12 @@ class MindMapView(QWidget):
         self.worker_succeeded.connect(self._dispatch_worker_success)
         self.worker_failed.connect(self._handle_worker_failure)
         self.worker_finished.connect(self._finish_worker)
+        self.destroyed.connect(self._unsubscribe_graph_changes)
         subscribe = getattr(self.core, "subscribe_mind_map", None)
         if callable(subscribe):
-            subscribe(self.graph_changed.emit)
+            unsubscribe = subscribe(self.graph_changed.emit)
+            if callable(unsubscribe):
+                self._unsubscribe_graph_notifications = unsubscribe
         if refresh_on_init:
             self.refresh_graph()
 
@@ -259,72 +274,77 @@ class MindMapView(QWidget):
         title_row.addWidget(self.status_label)
 
         toolbar = QHBoxLayout()
-        new_node = QPushButton("New Node")
-        new_node.clicked.connect(self._create_node)
-        connect_nodes = QPushButton("Connect Selected")
-        connect_nodes.clicked.connect(self._connect_selected)
-        edit_selected = QPushButton("Edit Selected")
-        edit_selected.clicked.connect(self._edit_selected)
-        delete_selected = QPushButton("Delete Selected")
-        delete_selected.clicked.connect(self._delete_selected)
-        auto_layout = QPushButton("Auto Layout")
-        auto_layout.clicked.connect(self._auto_layout)
-        fit_button = QPushButton("Fit Graph")
-        fit_button.clicked.connect(self._fit_graph)
-        refresh_button = QPushButton("Refresh")
-        refresh_button.clicked.connect(self.refresh_graph)
-        export_button = QPushButton("Export JSON")
-        export_button.clicked.connect(self._export_graph)
-        import_button = QPushButton("Import JSON")
-        import_button.clicked.connect(self._import_graph)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search title, type, description, content...")
         self.search_input.returnPressed.connect(self._search)
         search_button = QPushButton("Search")
         search_button.clicked.connect(self._search)
-
-        self._busy_widgets = (
-            new_node,
-            connect_nodes,
-            edit_selected,
-            delete_selected,
-            auto_layout,
-            fit_button,
-            refresh_button,
-            export_button,
-            import_button,
-            self.search_input,
-            search_button,
-        )
-        for widget in self._busy_widgets:
-            toolbar.addWidget(widget)
-        toolbar.addStretch()
         toolbar.addWidget(self.search_input)
         toolbar.addWidget(search_button)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self._build_left_panel())
         splitter.addWidget(self.canvas)
         splitter.addWidget(self._build_properties_panel())
-        splitter.setStretchFactor(0, 4)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([900, 280])
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 4)
+        splitter.setStretchFactor(2, 2)
+        splitter.setSizes([250, 900, 310])
+        self._busy_widgets = (*self.action_buttons.values(), self.search_input, search_button)
 
         root.addLayout(title_row)
         root.addLayout(toolbar)
         root.addWidget(splitter)
 
+    def _build_left_panel(self) -> QWidget:
+        """Build navigation and actions without exposing graph storage to widgets."""
+        tabs = QTabWidget()
+        self.left_tabs = tabs
+        nodes_tab = QWidget()
+        nodes_layout = QVBoxLayout(nodes_tab)
+        self.node_list = QListWidget()
+        self.node_list.currentItemChanged.connect(self._select_list_node)
+        nodes_layout.addWidget(self.node_list)
+        tabs.addTab(nodes_tab, "Nodes")
+
+        actions_tab = QWidget()
+        actions_layout = QVBoxLayout(actions_tab)
+        actions = (
+            ("New Node", self._create_node), ("Delete Selected", self._delete_selected),
+            ("Link Selected", self._link_selected_node), ("Unlink Selected", self._unlink_selected_node),
+            ("Edit Selected", self._edit_selected), ("Pin Node", self._toggle_pin),
+            ("Set as Central", self._toggle_central), ("Recenter Linked", self._recenter_linked),
+            ("Focus Selected", self._focus_selected), ("Force Layout", self._auto_layout),
+            ("Fit Graph", self._fit_graph), ("Refresh", self.refresh_graph),
+            ("Export JSON", self._export_graph), ("Import JSON", self._import_graph),
+        )
+        self.action_buttons: dict[str, QPushButton] = {}
+        for label, callback in actions:
+            button = QPushButton(label)
+            button.clicked.connect(callback)
+            actions_layout.addWidget(button)
+            self.action_buttons[label] = button
+        actions_layout.addStretch()
+        tabs.addTab(actions_tab, "Actions")
+        return tabs
+
     def _build_properties_panel(self) -> QWidget:
         panel = QWidget()
         layout = QVBoxLayout(panel)
-        heading = QLabel("Selected Object")
-        heading.setStyleSheet("font-weight: bold; font-size: 16px;")
+        tabs = QTabWidget()
+        self.right_tabs = tabs
+        self.context_summary = QTextEdit()
+        self.context_summary.setReadOnly(True)
+        self.context_summary.setPlaceholderText("Hover or select a node to preview its stored graph context.")
         self.selection_summary = QTextEdit()
         self.selection_summary.setReadOnly(True)
         self.selection_summary.setPlaceholderText(
             "Select a node or relationship to inspect its persisted properties."
         )
-        layout.addWidget(heading)
-        layout.addWidget(self.selection_summary)
+        tabs.addTab(self.context_summary, "Context")
+        tabs.addTab(self.selection_summary, "Node Details")
+        layout.addWidget(QLabel("Context / Node Details"))
+        layout.addWidget(tabs)
         return panel
 
     def refresh_graph(self) -> None:
@@ -349,9 +369,16 @@ class MindMapView(QWidget):
             self.scene.clear()
             self.node_items.clear()
             self.link_items.clear()
+            self._nodes_by_id = {node.node_id: node for node in snapshot.nodes}
+            self.physics = GraphPhysics(snapshot)
 
             for node in snapshot.nodes:
-                item = GraphNodeItem(node, moved_callback=self._persist_node_position)
+                item = GraphNodeItem(
+                    node,
+                    moved_callback=self._persist_node_position,
+                    hover_callback=self._show_hover_context,
+                    relevance=self.physics.nodes[node.node_id].relevance,
+                )
                 self.scene.addItem(item)
                 self.node_items[node.node_id] = item
 
@@ -374,6 +401,7 @@ class MindMapView(QWidget):
             self.status_label.setText(
                 f"{len(snapshot.nodes)} nodes · {len(snapshot.links)} links · SQLite saved"
             )
+            self._populate_node_list(snapshot.nodes)
             if snapshot.nodes and not selected_node_ids and not selected_link_ids:
                 self._fit_graph()
         except Exception as error:
@@ -383,6 +411,41 @@ class MindMapView(QWidget):
         callbacks, self._after_refresh = self._after_refresh, []
         for callback in callbacks:
             callback()
+
+    def _populate_node_list(self, nodes: tuple[GraphNode, ...]) -> None:
+        selected_ids = {item.node_id for item in self.scene.selectedItems() if isinstance(item, GraphNodeItem)}
+        self.node_list.blockSignals(True)
+        self.node_list.clear()
+        grouped: dict[str, list[GraphNode]] = {}
+        for node in nodes:
+            grouped.setdefault(node.node_type or "custom", []).append(node)
+        for node_type in sorted(grouped):
+            header = QListWidgetItem(node_type.replace("_", " ").upper())
+            header.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.node_list.addItem(header)
+            for node in sorted(grouped[node_type], key=lambda value: (value.title.lower(), value.node_id)):
+                item = QListWidgetItem(f"  {node.title}")
+                item.setData(Qt.ItemDataRole.UserRole, node.node_id)
+                self.node_list.addItem(item)
+                if node.node_id in selected_ids:
+                    self.node_list.setCurrentItem(item)
+        self.node_list.blockSignals(False)
+
+    def _select_list_node(self, item: QListWidgetItem | None, _previous: QListWidgetItem | None) -> None:
+        if item is None:
+            return
+        node_id = item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(node_id, str):
+            self._select_node(node_id)
+
+    def _show_hover_context(self, node_id: str | None) -> None:
+        node = self._nodes_by_id.get(node_id or "")
+        if node is None:
+            self.context_summary.setPlainText("Select a node to view its stored graph context.")
+            return
+        self.context_summary.setPlainText(
+            f"Preview: {node.title}\n\nType: {node.node_type}\n\n{node.description or node.content or 'No stored context.'}"
+        )
 
     def _run_core(
         self,
@@ -417,6 +480,7 @@ class MindMapView(QWidget):
 
     def _set_busy(self, busy: bool, message: str = "") -> None:
         self._busy = busy
+        self.canvas.setEnabled(not busy)
         for widget in self._busy_widgets:
             widget.setEnabled(not busy)
         if busy:
@@ -455,8 +519,14 @@ class MindMapView(QWidget):
         self._active_workers.clear()
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt uses camelCase names.
+        self._unsubscribe_graph_changes()
         self.shutdown_workers()
         super().closeEvent(event)
+
+    def _unsubscribe_graph_changes(self, _destroyed: object | None = None) -> None:
+        if self._unsubscribe_graph_notifications is not None:
+            self._unsubscribe_graph_notifications()
+            self._unsubscribe_graph_notifications = None
 
     def _handle_worker_failure(self, title: str, message: str) -> None:
         self._refreshing = False
@@ -518,6 +588,49 @@ class MindMapView(QWidget):
             "Creating link",
         )
 
+    def _link_selected_node(self) -> None:
+        nodes = [item for item in self.scene.selectedItems() if isinstance(item, GraphNodeItem)]
+        if len(nodes) == 2:
+            self._connect_selected()
+            return
+        if len(nodes) != 1:
+            QMessageBox.information(self, "Select a node", "Select one source node, then choose a target.")
+            return
+        source = nodes[0]
+        targets = {f"{node.title} [{node.node_id[:8]}]": node for node in self._nodes_by_id.values() if node.node_id != source.node_id}
+        label, accepted = QInputDialog.getItem(self, "Link selected node", "Target:", list(targets), 0, False)
+        if not accepted or not label:
+            return
+        dialog = LinkDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._run_core(
+            lambda: self.core.create_mind_map_link(
+                source_node_id=source.node_id, target_node_id=targets[label].node_id, **dialog.values()
+            ),
+            lambda _link: self._refresh_then(lambda: self._select_node(source.node_id)),
+            "Creating link",
+        )
+
+    def _unlink_selected_node(self) -> None:
+        nodes = [item for item in self.scene.selectedItems() if isinstance(item, GraphNodeItem)]
+        if len(nodes) != 1:
+            QMessageBox.information(self, "Select a node", "Select one node to choose one of its links.")
+            return
+        node_id = nodes[0].node_id
+        links = [link for link in self.link_items.values() if link.link.source_node_id == node_id or link.link.target_node_id == node_id]
+        if not links:
+            QMessageBox.information(self, "No links", "The selected node has no links.")
+            return
+        choices = {f"{link.link.link_type}: {link.link_id[:8]}": link for link in links}
+        label, accepted = QInputDialog.getItem(self, "Unlink selected node", "Link:", list(choices), 0, False)
+        if accepted and label:
+            self._run_core(
+                lambda: self.core.delete_mind_map_link(choices[label].link_id),
+                lambda _result: self._refresh_then(lambda: self._select_node(node_id)),
+                "Deleting link",
+            )
+
     def _edit_selected(self) -> None:
         selected = self.scene.selectedItems()
         if len(selected) != 1:
@@ -565,7 +678,8 @@ class MindMapView(QWidget):
         self._run_core(delete_selected, lambda _result: self.refresh_graph(), "Deleting graph objects")
 
     def _persist_node_position(self, node_id: str, x: float, y: float) -> None:
-        if self._refreshing:
+        node = self._nodes_by_id.get(node_id)
+        if self._refreshing or node is None or node.position_locked or node.metadata.get("mindmap_pinned", False):
             return
         if not self._busy:
             self._run_core(
@@ -576,26 +690,86 @@ class MindMapView(QWidget):
             )
 
     def _auto_layout(self) -> None:
-        nodes = list(self.node_items.values())
-        if not nodes:
+        if self.physics is None or not self.physics.nodes:
             return
-        unlocked = [item for item in nodes if not item.node.position_locked]
-        if not unlocked:
-            self.status_label.setText("All node positions are locked.")
+        self.physics.step(80)
+        positions = {
+            node_id: (x, y)
+            for node_id, (x, y) in self.physics.positions().items()
+            if not self.physics.nodes[node_id].pinned
+        }
+        if not positions:
+            self.status_label.setText("All node positions are pinned.")
             return
-        radius = max(220.0, len(unlocked) * 42.0)
-        positions = []
-        for index, item in enumerate(unlocked):
-            angle = 2 * math.pi * index / max(1, len(unlocked))
-            x = math.cos(angle) * radius
-            y = math.sin(angle) * radius
-            positions.append((item.node_id, x, y))
 
-        def save_layout() -> None:
-            for node_id, x, y in positions:
-                self.core.move_mind_map_node(node_id, x, y)
+        self._run_core(
+            lambda: self.core.move_mind_map_nodes(positions),
+            lambda _result: self._refresh_then(self._fit_graph),
+            "Saving auto layout",
+        )
 
-        self._run_core(save_layout, lambda _result: self._refresh_then(self._fit_graph), "Saving auto layout")
+    def _toggle_pin(self) -> None:
+        node = self._single_selected_node()
+        if node is None:
+            return
+        metadata = dict(node.metadata)
+        metadata["mindmap_pinned"] = not bool(metadata.get("mindmap_pinned", node.position_locked))
+        self._run_core(
+            lambda: self.core.update_mind_map_node(node.node_id, metadata=metadata),
+            lambda _result: self._refresh_then(lambda: self._select_node(node.node_id)),
+            "Saving pin state",
+        )
+
+    def _toggle_central(self) -> None:
+        node = self._single_selected_node()
+        if node is None:
+            return
+        metadata = dict(node.metadata)
+        metadata["mindmap_central"] = not bool(metadata.get("mindmap_central", False))
+        self._run_core(
+            lambda: self.core.update_mind_map_node(node.node_id, metadata=metadata),
+            lambda _result: self._refresh_then(lambda: self._select_node(node.node_id)),
+            "Saving central state",
+        )
+
+    def _recenter_linked(self) -> None:
+        node = self._single_selected_node()
+        if node is None:
+            return
+        neighbor_ids = []
+        for link in self.link_items.values():
+            if link.link.source_node_id == node.node_id:
+                neighbor_ids.append(link.link.target_node_id)
+            elif link.link.target_node_id == node.node_id:
+                neighbor_ids.append(link.link.source_node_id)
+        neighbor_ids = list(dict.fromkeys(neighbor_ids))
+        if not neighbor_ids:
+            self.status_label.setText("Selected node has no direct links.")
+            return
+        positions: dict[str, tuple[float, float]] = {}
+        for index, neighbor_id in enumerate(neighbor_ids):
+            neighbor = self._nodes_by_id[neighbor_id]
+            if neighbor.position_locked or neighbor.metadata.get("mindmap_pinned", False):
+                continue
+            angle = math.tau * index / len(neighbor_ids)
+            positions[neighbor_id] = (node.position_x + math.cos(angle) * 150, node.position_y + math.sin(angle) * 150)
+        self._run_core(
+            lambda: self.core.move_mind_map_nodes(positions),
+            lambda _result: self._refresh_then(lambda: self._select_node(node.node_id)),
+            "Recentering linked nodes",
+        )
+
+    def _focus_selected(self) -> None:
+        node = self._single_selected_node()
+        if node is not None:
+            self._select_node(node.node_id)
+
+    def _single_selected_node(self) -> GraphNode | None:
+        nodes = [item.node for item in self.scene.selectedItems() if isinstance(item, GraphNodeItem)]
+        if len(nodes) != 1:
+            QMessageBox.information(self, "Select one node", "Select exactly one node first.")
+            return None
+        return nodes[0]
 
     def _search(self) -> None:
         query = self.search_input.text().strip()
@@ -668,6 +842,10 @@ class MindMapView(QWidget):
         item = selected[0]
         if isinstance(item, GraphNodeItem):
             node = item.node
+            self.context_summary.setPlainText(
+                f"Selected: {node.title}\n\nType: {node.node_type}\n\n"
+                f"{node.description or node.content or 'No stored context.'}"
+            )
             source = (
                 f"{node.source_reference.source_type}:{node.source_reference.source_id}"
                 if node.source_reference else "manual"

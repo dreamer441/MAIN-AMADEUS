@@ -15,30 +15,44 @@ from mindmap.models import GraphLink, GraphNode
 class GraphNodeItem(QGraphicsObject):
     """Movable visual representation of one persisted graph node."""
 
-    WIDTH = 190.0
-    HEIGHT = 84.0
+    TYPE_COLORS = {
+        "chat": "#5b8def", "sheet": "#50be8c", "material": "#e6aa50",
+        "feature": "#64d2e6", "task": "#f0d25a", "bug": "#eb5f5f",
+        "decision": "#78e6b4", "memory": "#a880ff", "idea": "#7ca8d8",
+    }
 
     def __init__(
         self,
         node: GraphNode,
         *,
         moved_callback: Callable[[str, float, float], None],
+        hover_callback: Callable[[str | None], None] | None = None,
+        relevance: float = 0.0,
     ) -> None:
         super().__init__()
         self.node = node
         self._moved_callback = moved_callback
+        self._hover_callback = hover_callback
+        self._relevance = max(0.0, min(1.0, relevance))
         self._links: set[GraphLinkItem] = set()
+        self._hovered = False
         self.setPos(node.position_x, node.position_y)
         self._apply_interaction_flags()
         self.setToolTip(self._tooltip_text())
         self.setZValue(10.0)
+        self.setAcceptHoverEvents(True)
 
     @property
     def node_id(self) -> str:
         return self.node.node_id
 
     def boundingRect(self) -> QRectF:  # noqa: N802 - Qt naming.
-        return QRectF(-self.WIDTH / 2, -self.HEIGHT / 2, self.WIDTH, self.HEIGHT)
+        radius = self.radius
+        return QRectF(-radius, -radius, radius * 2, radius * 2)
+
+    @property
+    def radius(self) -> float:
+        return 24.0 + self.node.importance * 28.0 + self._relevance * 12.0
 
     def paint(
         self,
@@ -48,33 +62,30 @@ class GraphNodeItem(QGraphicsObject):
     ) -> None:
         del option, widget
         rect = self.boundingRect()
-        fill = QColor("#eef3f8")
-        border = QColor("#46647f")
+        fill = QColor(self.TYPE_COLORS.get(self.node.node_type, "#94a3b8"))
+        fill.setAlpha(215)
+        border = QColor("#dbeafe")
         if self.isSelected():
-            fill = QColor("#dbeafe")
-            border = QColor("#1d4ed8")
+            border = QColor("#ffffff")
+        elif self._hovered:
+            border = QColor("#fde68a")
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(border, 2.2 if self.isSelected() else 1.4))
+        painter.setPen(QPen(border, 3.0 if self.isSelected() else 1.7))
         painter.setBrush(QBrush(fill))
-        painter.drawRoundedRect(rect, 12.0, 12.0)
-
-        type_font = QFont(painter.font())
-        type_font.setPointSize(8)
-        type_font.setBold(True)
-        painter.setFont(type_font)
-        painter.setPen(QPen(QColor("#52606d")))
-        painter.drawText(
-            QRectF(rect.left() + 12, rect.top() + 8, rect.width() - 24, 18),
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-            self.node.node_type.replace("_", " ").upper(),
-        )
+        if self._central():
+            painter.setPen(QPen(QColor("#67e8f9"), 2.2))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(rect.adjusted(-8, -8, 8, 8))
+            painter.setPen(QPen(border, 3.0 if self.isSelected() else 1.7))
+            painter.setBrush(QBrush(fill))
+        painter.drawEllipse(rect)
 
         title_font = QFont(painter.font())
-        title_font.setPointSize(10)
+        title_font.setPointSize(9)
         title_font.setBold(True)
         painter.setFont(title_font)
         painter.setPen(QPen(QColor("#17212b")))
-        title_rect = QRectF(rect.left() + 12, rect.top() + 28, rect.width() - 24, rect.height() - 36)
+        title_rect = QRectF(rect.left() + 8, rect.top() + 12, rect.width() - 16, rect.height() - 24)
         elided_title = QFontMetrics(title_font).elidedText(
             self.node.title, Qt.TextElideMode.ElideRight, int(title_rect.width())
         )
@@ -87,10 +98,14 @@ class GraphNodeItem(QGraphicsObject):
         if self.node.position_locked:
             painter.setPen(QPen(QColor("#6b7280")))
             painter.drawText(
-                QRectF(rect.right() - 28, rect.top() + 6, 18, 18),
+                QRectF(rect.right() - 22, rect.top() + 4, 18, 18),
                 Qt.AlignmentFlag.AlignCenter,
                 "L",
             )
+
+        if self._pinned():
+            painter.setPen(QPen(QColor("#fde68a")))
+            painter.drawText(QRectF(-8, rect.top() - 19, 16, 16), Qt.AlignmentFlag.AlignCenter, "P")
 
     def add_link(self, link: "GraphLinkItem") -> None:
         self._links.add(link)
@@ -112,7 +127,7 @@ class GraphNodeItem(QGraphicsObject):
             QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
             | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
         )
-        if not self.node.position_locked:
+        if not self.node.position_locked and not self._pinned():
             flags |= QGraphicsItem.GraphicsItemFlag.ItemIsMovable
         self.setFlags(flags)
 
@@ -124,8 +139,30 @@ class GraphNodeItem(QGraphicsObject):
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
         super().mouseReleaseEvent(event)
+        if self.node.position_locked or self._pinned():
+            return
         position = self.pos()
         self._moved_callback(self.node_id, position.x(), position.y())
+
+    def hoverEnterEvent(self, event) -> None:  # noqa: N802
+        self._hovered = True
+        self.update()
+        if self._hover_callback:
+            self._hover_callback(self.node_id)
+        super().hoverEnterEvent(event)
+
+    def hoverLeaveEvent(self, event) -> None:  # noqa: N802
+        self._hovered = False
+        self.update()
+        if self._hover_callback:
+            self._hover_callback(None)
+        super().hoverLeaveEvent(event)
+
+    def _pinned(self) -> bool:
+        return bool(self.node.metadata.get("mindmap_pinned", self.node.position_locked))
+
+    def _central(self) -> bool:
+        return bool(self.node.metadata.get("mindmap_central", False))
 
     def _tooltip_text(self) -> str:
         description = self.node.description or "No description"

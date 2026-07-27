@@ -4,13 +4,14 @@
 
 - Add undo/redo transaction history.
 - Add node grouping, containers, collapse/expand, and multiple graph workspaces.
-- Add richer layout engines while preserving manually locked positions.
+- Add richer layout engines while preserving positions locked either manually or by `mindmap_pinned` metadata.
 - Add link endpoint handles and direct drag-to-connect interaction.
 - Add source-opening adapters so a chat/sheet/material node can jump to its original object.
+- Any future source-opening adapter must be Core-mediated and permission-guarded; the Mind Map GUI must not read, edit, or open source paths directly.
 - Keep source metadata adapters Core-mediated; source modules must use `upsert_mind_map_source_node` rather than SQLite.
 - Add controlled Chat Registry synchronization after Chat Registry V2 stabilizes.
 - Add comments on nodes and links through the Comments Module.
-- Add batch operations for large Creation Module updates.
+- Add broader batch graph creation and relationship operations for large Creation Module updates.
 - Add database migrations and backup/restore controls in the GUI.
 
 ## Retrieval and intelligence

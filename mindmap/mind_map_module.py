@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -21,8 +22,8 @@ class MindMapModule:
         self.repository = SQLiteMindMapRepository(project_root)
         self.service = MindMapService(self.repository, graph_id=graph_id)
 
-    def subscribe(self, listener: GraphListener) -> None:
-        self.service.subscribe(listener)
+    def subscribe(self, listener: GraphListener) -> Callable[[], None]:
+        return self.service.subscribe(listener)
 
     def get_snapshot(self) -> GraphSnapshot:
         return self.service.get_snapshot()
@@ -47,6 +48,9 @@ class MindMapModule:
 
     def move_node(self, node_id: str, position_x: float, position_y: float, **fields: Any) -> GraphNode:
         return self.service.move_node(node_id, position_x, position_y, **fields)
+
+    def move_nodes(self, positions: dict[str, tuple[float, float]]) -> None:
+        self.service.move_nodes(positions)
 
     def delete_node(self, node_id: str, **fields: Any) -> None:
         self.service.delete_node(node_id, **fields)

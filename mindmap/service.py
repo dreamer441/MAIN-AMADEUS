@@ -41,7 +41,7 @@ class MindMapService:
         self.graph_id = self._clean_required(graph_id, "graph_id")
         self._listeners: list[GraphListener] = []
 
-    def subscribe(self, listener: GraphListener) -> None:
+    def subscribe(self, listener: GraphListener) -> Callable[[], None]:
         """Subscribe to completed graph changes.
 
         Listeners are fault-isolated because GUI refresh failures must not corrupt a
@@ -50,6 +50,14 @@ class MindMapService:
         if not callable(listener):
             raise ValueError("listener must be callable")
         self._listeners.append(listener)
+
+        def unsubscribe() -> None:
+            try:
+                self._listeners.remove(listener)
+            except ValueError:
+                pass
+
+        return unsubscribe
 
     def get_snapshot(self) -> GraphSnapshot:
         return GraphSnapshot(
@@ -187,12 +195,29 @@ class MindMapService:
         *,
         event_listener: ProcessListener | None = None,
     ) -> GraphNode:
+        existing = self._require_node(node_id)
+        if existing.position_locked or existing.metadata.get("mindmap_pinned", False):
+            return existing
         return self.update_node(
             node_id,
             position_x=position_x,
             position_y=position_y,
             event_listener=event_listener,
         )
+
+    def move_nodes(self, positions: Mapping[str, tuple[float, float]]) -> None:
+        """Persist a validated layout projection atomically for this graph."""
+        clean_positions = {
+            self._clean_required(node_id, "node_id"):
+            (self._finite_number(position[0], "position_x"), self._finite_number(position[1], "position_y"))
+            for node_id, position in positions.items()
+        }
+        for node_id in clean_positions:
+            existing = self._require_node(node_id)
+            if existing.position_locked or existing.metadata.get("mindmap_pinned", False):
+                raise ValueError("Pinned mind map nodes cannot be moved")
+        self.repository.update_node_positions(self.graph_id, clean_positions)
+        self._publish("nodes_moved", "graph", self.graph_id)
 
     def delete_node(self, node_id: str, *, event_listener: ProcessListener | None = None) -> None:
         existing = self._require_node(node_id)
@@ -434,7 +459,10 @@ class MindMapService:
             importance=importance,
             confidence=confidence,
             source_reference=reference,
-            metadata=metadata or existing.metadata,
+            metadata={
+                **(metadata if metadata is not None else existing.metadata),
+                **{key: value for key, value in existing.metadata.items() if key.startswith("mindmap_")},
+            },
             event_listener=event_listener,
         )
 

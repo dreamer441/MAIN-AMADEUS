@@ -2,6 +2,42 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-27 - Mind Map Position Lock Semantics
+
+- Date: 2026-07-27
+- Phase: Mind Map GUI adaptation review
+- Feature or fix: Prevented false pin metadata from overriding a persistent node position lock.
+- What changed: Graph physics, service single and batch moves, and scene persistence/layout filters now treat `position_locked` and `mindmap_pinned` as additive locks.
+- Files/modules affected: `mindmap/gui/physics.py`, `mindmap/gui/view.py`, `mindmap/service.py`, focused Mind Map tests, Mind Map documentation, and this changelog.
+- User-visible behavior: Nodes with `position_locked=True` cannot be dragged, force-laid out, recentered, or batch-moved even when `mindmap_pinned=False`.
+- Architecture notes: The persistent model lock remains authoritative; metadata pinning adds an independent temporary layout lock.
+- Tests performed: Focused Mind Map tests, explicit `tests` discovery suite, and compile validation passed.
+- Known limitations: Force layout remains the bounded V1 simulation; broader graph batch creation and advanced layout engines remain future work.
+
+## 2026-07-27 - Mind Map Port Review Fixes
+
+- Date: 2026-07-27
+- Phase: Mind Map GUI adaptation review
+- Feature or fix: Hardened force layout, pin behavior, source metadata refreshes, graph subscriptions, and layout persistence.
+- What changed: Co-located nodes now receive a deterministic nonzero force direction. Metadata-pinned nodes are immovable in both scene interaction and persistence. Source-node upserts preserve existing `mindmap_pinned` and `mindmap_central` metadata. Graph subscriptions now return unsubscribe callbacks that views invoke on close or destruction. Canvas input is disabled during workers. Layout and recenter coordinate changes use a Core-mediated atomic batch repository transaction.
+- Files/modules affected: `mindmap/gui`, `mindmap/service.py`, `mindmap/repository.py`, `mindmap/mind_map_module.py`, `amadeus_core/core.py`, focused Mind Map tests, Mind Map documentation, and this changelog.
+- User-visible behavior: Pinned nodes cannot be dragged, auto-layout reliably separates overlapping nodes, and the canvas cannot accept conflicting input while graph work runs.
+- Architecture notes: View metadata ownership remains in the service layer; no GUI-side merge is required. Batch coordinate persistence remains behind Core and the Mind Map module facade.
+- Tests performed: Focused Mind Map tests, full test suite, and compile validation are run with this delivery.
+- Known limitations: Force layout remains the bounded V1 simulation; broader graph batch creation and advanced layout engines remain future work.
+
+## 2026-07-27 - Mind Map PyQt6 Core-Safe Visual Port
+
+- Date: 2026-07-27
+- Phase: Mind Map GUI adaptation
+- Feature or fix: Replaced the initial graph page layout with the approved force-directed three-panel PyQt6 workspace.
+- What changed: Added deterministic in-memory graph physics, type-coloured relevance/importance-sized nodes, pan/zoom/drag, selected and hover context, grouped node listing, Actions controls, Context/Node Details tabs, pin/central metadata controls, linked recentering, focus, and Core-worker-backed CRUD/link/layout actions.
+- Files/modules affected: `mindmap/gui`, focused Mind Map tests, Mind Map documentation, and this changelog.
+- User-visible behavior: Mind Map is now a three-panel force-graph workspace while JSON import/export, search, property editing, and Core-backed persistence remain available.
+- Architecture notes: Physics never accesses SQLite or persists automatically. All graph reads and mutations remain Core-mediated QThread work; pin/central are existing node metadata updates; invalidation notices remain identifier-only.
+- Tests performed: Focused Mind Map tests and `py -3 -m compileall mindmap tests` passed; full discovery is recorded with this delivery.
+- Known limitations: Legacy direct source-file opening, source-derived previews, source-file editing, and global window behaviors were intentionally excluded for privacy, containment, and Core-boundary safety.
+
 ## 2026-07-27 - Mind Map Safety Hardening
 
 - Date: 2026-07-27

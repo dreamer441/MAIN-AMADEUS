@@ -6,6 +6,7 @@ import json
 import sqlite3
 from collections.abc import Iterable, Mapping
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -158,6 +159,23 @@ class SQLiteMindMapRepository:
             if cursor.rowcount != 1:
                 raise KeyError(f"Unknown mind map node: {node.node_id}")
         return node
+
+    def update_node_positions(self, graph_id: str, positions: Mapping[str, tuple[float, float]]) -> None:
+        """Persist all requested coordinates in one transaction."""
+        if not positions:
+            return
+        with self._connect() as connection:
+            for node_id, (position_x, position_y) in positions.items():
+                cursor = connection.execute(
+                    """
+                    UPDATE mindmap_nodes
+                    SET position_x = ?, position_y = ?, updated_at = ?
+                    WHERE node_id = ? AND graph_id = ?
+                    """,
+                    (position_x, position_y, datetime.now(timezone.utc).isoformat(), node_id, graph_id),
+                )
+                if cursor.rowcount != 1:
+                    raise KeyError(f"Unknown mind map node in graph '{graph_id}': {node_id}")
 
     def delete_node(self, node_id: str) -> None:
         with self._connect() as connection:

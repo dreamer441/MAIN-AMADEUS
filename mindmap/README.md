@@ -29,6 +29,12 @@ Core graph subscriptions are invalidation notices, not graph transport: they inc
 
 The PyQt page uses QThread workers for Core graph reads, mutations, JSON import/export, search, and layout persistence. Controls are disabled while work runs, then recover after either success or failure; scene changes are made only by GUI-thread slots.
 
+## Workspace interaction
+
+The PyQt6 workspace has a grouped Nodes/Actions panel, a pan/zoom/drag graph canvas, and Context/Node Details tabs. Type colour, importance, confidence, link relevance, selected state, hover state, pin state, and central state determine visual prominence. The force layout is a deterministic in-memory projection; only explicit layout, drag, pin, central, and editing actions persist through Core workers. Pin and central state are narrow node metadata fields (`mindmap_pinned` and `mindmap_central`) rather than a second persistence mechanism.
+
+The prior application's direct source-file opening, filesystem-derived previews, and source-file editing are intentionally excluded. The Mind Map has no direct disk/source-file access: stored node fields are the only context shown by the GUI.
+
 ## Main files
 
 - `models.py` — framework-independent graph vocabulary.
