@@ -132,3 +132,8 @@ The Process Monitor shows real events such as input received, annotation check, 
 - Displayed code has one-based line labels, including blank source lines.
 - Ask AMADEUS About File has an explicit, default-off Include code context control and optional `15` or `15-30` line selector.
 - With context disabled, the visible file remains visual only; with context enabled, only the verified selected file/range enters that direct Ask request.
+
+## Chat Interaction Polish
+
+- Flow Chat now uses Enter to send and Shift+Enter to insert a new line, matching dedicated Chats.
+- Flow Chat and Chats each have an arrow control that hides or restores their side panel without clearing its state.

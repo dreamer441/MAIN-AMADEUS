@@ -9,6 +9,7 @@
 - Add trace filtering by category and level.
 - Add trace export for debugging.
 - Add safer close/cancel behavior for long-running LLM calls.
+- Persist Flow and Chats side-panel visibility across application restarts.
 - Keep GUI comments updated when layout or worker flow changes.
 
 ## Flow Shell Follow-up

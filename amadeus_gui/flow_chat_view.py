@@ -1,6 +1,6 @@
 """Persistent Flow Chat home view that delegates all work to Core."""
 
-from PyQt6.QtCore import QObject, QThread, pyqtSignal
+from PyQt6.QtCore import QObject, QThread, Qt, pyqtSignal
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QTextEdit, QVBoxLayout, QWidget
 
 from amadeus_core import AmadeusCore
@@ -31,6 +31,21 @@ class FlowChatResponseWorker(QObject):
         self.finished.emit(result)
 
 
+class FlowMessageInput(QTextEdit):
+    """Multiline Flow input that sends on Enter and keeps Shift+Enter for newlines."""
+
+    send_requested = pyqtSignal()
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt uses camelCase names.
+        is_enter = event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+        has_shift = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+        if is_enter and not has_shift:
+            self.send_requested.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
 class FlowChatView(QWidget):
     """The persistent, history-backed Flow conversation without chat-management controls."""
 
@@ -57,7 +72,14 @@ class FlowChatView(QWidget):
         self.flow_history = QTextEdit()
         self.flow_history.setReadOnly(True)
         self.flow_history.setPlaceholderText("Your Flow conversation will appear here.")
-        monitor_column = QVBoxLayout()
+        self.side_panel_toggle_button = QPushButton(">")
+        self.side_panel_toggle_button.setAccessibleName("Toggle Flow side panel")
+        self.side_panel_toggle_button.setFixedWidth(28)
+        self.side_panel_toggle_button.clicked.connect(self._toggle_side_panel)
+
+        self.flow_side_panel = QWidget()
+        monitor_column = QVBoxLayout(self.flow_side_panel)
+        monitor_header = QHBoxLayout()
         monitor_title = QLabel("Process Monitor")
         monitor_title.setStyleSheet("font-size: 16px; font-weight: bold;")
         self.process_monitor = QTextEdit()
@@ -66,19 +88,23 @@ class FlowChatView(QWidget):
         self.process_monitor.setPlaceholderText("Execution events for the latest Flow request will appear here.")
         monitor_note = QLabel("Shows real execution events only, not hidden thoughts.")
         monitor_note.setStyleSheet("color: #666; padding: 2px;")
-        monitor_column.addWidget(monitor_title)
+        monitor_header.addWidget(monitor_title)
+        monitor_header.addStretch()
+        monitor_column.addLayout(monitor_header)
         monitor_column.addWidget(self.process_monitor)
         monitor_column.addWidget(monitor_note)
         content.addWidget(self.flow_history, stretch=3)
-        content.addLayout(monitor_column, stretch=2)
+        content.addWidget(self.side_panel_toggle_button)
+        content.addWidget(self.flow_side_panel, stretch=2)
 
         self.status_label = QLabel("Ready")
         self.status_label.setStyleSheet("color: #666; padding: 4px;")
         input_row = QHBoxLayout()
-        self.message_input = QTextEdit()
-        self.message_input.setPlaceholderText("Type a message for Flow...")
+        self.message_input = FlowMessageInput()
+        self.message_input.setPlaceholderText("Type a message for Flow... Enter = send, Shift+Enter = new line")
         self.message_input.setMinimumHeight(70)
         self.message_input.setMaximumHeight(130)
+        self.message_input.send_requested.connect(self.send_message)
         self.send_button = QPushButton("Send")
         self.send_button.clicked.connect(self.send_message)
         input_row.addWidget(self.message_input)
@@ -89,6 +115,12 @@ class FlowChatView(QWidget):
         layout.addLayout(content)
         layout.addWidget(self.status_label)
         layout.addLayout(input_row)
+
+    def _toggle_side_panel(self) -> None:
+        """Hide or restore Flow's monitor without discarding its latest event state."""
+        is_hidden = self.flow_side_panel.isHidden()
+        self.flow_side_panel.setVisible(is_hidden)
+        self.side_panel_toggle_button.setText(">" if is_hidden else "<")
 
     def _load_history(self) -> None:
         """Render Flow history supplied by Core, never by direct storage access."""

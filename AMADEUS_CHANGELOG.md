@@ -324,3 +324,11 @@ Append-only global project progress log. Module-specific details still belong in
 - Improved Comments panel readability by showing target message numbers as `comment(number)` in the heading.
 - Kept comment message detection best-effort until `[current][number]` introduces structured message references.
 - Documented future visual message-number colors for comments, important, and ignore markers.
+# 2026-07-27 | GUI Polish | Flow input and collapsible side panels
+
+- **What changed:** Flow Chat now sends on Enter and inserts a newline on Shift+Enter. Chats and Flow each have a toggle arrow that hides or restores their side panel without clearing state.
+- **Files/modules affected:** `amadeus_gui/flow_chat_view.py`, `amadeus_gui/main/main_window.py`, GUI tests and documentation.
+- **User-visible behavior:** Faster Flow message sending and more usable conversation space when Process Monitor or workspace panels are not needed.
+- **Architecture notes:** Changes remain within GUI widgets; Core, storage, LLM, and process-event ownership are unchanged.
+- **Tests performed:** Focused GUI keyboard and side-panel state tests, full suite, and compilation.
+- **Known limitations:** Panel visibility is retained while the application runs but is not saved between restarts.

@@ -8,10 +8,12 @@ from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QLabel
 
 from amadeus_gui import AmadeusMainWindow
+from amadeus_gui.flow_chat_view import FlowMessageInput
 
 
 class FakeFlowCore:
@@ -173,6 +175,40 @@ class FlowChatShellTests(unittest.TestCase):
         self.assertTrue(chat_input.isEnabled())
         self.assertTrue(self.window.send_button.isEnabled())
         self.assertEqual(right_panel.PROCESS_TAB_INDEX, right_panel.currentIndex())
+
+    def test_flow_input_sends_on_enter_and_keeps_shift_enter_for_newlines(self) -> None:
+        input_widget = FlowMessageInput()
+        self.addCleanup(input_widget.deleteLater)
+        sent = []
+        input_widget.send_requested.connect(lambda: sent.append(True))
+
+        input_widget.setFocus()
+        QTest.keyClick(input_widget, Qt.Key.Key_Return)
+        self.assertEqual([True], sent)
+        self.assertEqual("", input_widget.toPlainText())
+
+        QTest.keyClick(input_widget, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+        self.assertEqual([True], sent)
+        self.assertEqual("\n", input_widget.toPlainText())
+
+    def test_side_panels_can_hide_and_restore_without_losing_state(self) -> None:
+        flow_view = self.window.flow_chat_view
+        flow_view.process_monitor.setPlainText("Flow event remains visible")
+        flow_view.side_panel_toggle_button.click()
+        self.assertTrue(flow_view.flow_side_panel.isHidden())
+        self.assertEqual("<", flow_view.side_panel_toggle_button.text())
+        flow_view.side_panel_toggle_button.click()
+        self.assertFalse(flow_view.flow_side_panel.isHidden())
+        self.assertIn("Flow event remains visible", flow_view.process_monitor.toPlainText())
+
+        self.window.navigation_buttons["Chats"].click()
+        self.window.right_panel.setCurrentIndex(self.window.right_panel.PROCESS_TAB_INDEX)
+        self.window.side_panel_toggle_button.click()
+        self.assertTrue(self.window.right_panel.isHidden())
+        self.assertEqual("<", self.window.side_panel_toggle_button.text())
+        self.window.side_panel_toggle_button.click()
+        self.assertFalse(self.window.right_panel.isHidden())
+        self.assertEqual(self.window.right_panel.PROCESS_TAB_INDEX, self.window.right_panel.currentIndex())
 
 
 if __name__ == "__main__":

@@ -322,6 +322,11 @@ class AmadeusMainWindow(QMainWindow):
         self.right_panel.comment_refresh_requested.connect(self._refresh_comments_panel)
 
         main_row.addLayout(chat_column, stretch=3)
+        self.side_panel_toggle_button = QPushButton(">")
+        self.side_panel_toggle_button.setAccessibleName("Toggle Chats side panel")
+        self.side_panel_toggle_button.setFixedWidth(28)
+        self.side_panel_toggle_button.clicked.connect(self._toggle_side_panel)
+        main_row.addWidget(self.side_panel_toggle_button)
         main_row.addWidget(self.right_panel, stretch=2)
 
         self.status_label = QLabel("Ready")
@@ -395,6 +400,12 @@ class AmadeusMainWindow(QMainWindow):
         self.views.setCurrentIndex(index)
         for button_index, button in enumerate(self.navigation_buttons.values()):
             button.setChecked(button_index == index)
+
+    def _toggle_side_panel(self) -> None:
+        """Hide or restore the dedicated-chat workspace panel without clearing it."""
+        is_hidden = self.right_panel.isHidden()
+        self.right_panel.setVisible(is_hidden)
+        self.side_panel_toggle_button.setText(">" if is_hidden else "<")
 
 
     def _build_chat_control_row(self) -> QHBoxLayout:
