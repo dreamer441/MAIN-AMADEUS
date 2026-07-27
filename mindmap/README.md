@@ -27,11 +27,13 @@ Node and link mutations emit only real operation boundaries: start, saved/delete
 
 Core graph subscriptions are invalidation notices, not graph transport: they include only event type, entity type, entity ID, graph ID, and timestamp. The GUI refreshes through `Core.get_mind_map_snapshot()` after a notice, so titles, descriptions, content, evidence, source locators, and metadata never cross the public notification boundary.
 
-The PyQt page uses QThread workers for Core graph reads, mutations, JSON import/export, search, and layout persistence. Controls are disabled while work runs, then recover after either success or failure; scene changes are made only by GUI-thread slots.
+The PyQt page uses QThread workers for Core graph reads, mutations, JSON import/export, search, and layout persistence. Controls are disabled while work runs, then recover after either success or failure; scene changes are made only by GUI-thread slots. Snapshot refreshes reconcile existing `QGraphicsItem` objects by identifier rather than clearing and rebuilding the scene.
 
 ## Workspace interaction
 
-The PyQt6 workspace has a grouped Nodes/Actions panel, a pan/zoom/drag graph canvas, and Context/Node Details tabs. Type colour, importance, confidence, link relevance, selected state, hover state, pin state, and central state determine visual prominence. The force layout is a deterministic in-memory projection; only explicit layout, drag, pin, central, and editing actions persist through Core workers. Pin and central state are narrow node metadata fields (`mindmap_pinned` and `mindmap_central`) rather than a second persistence mechanism.
+The PyQt6 workspace follows the legacy dark presentation: title, subtitle, framed Mind Map/Graph Space/Context panels, grouped Nodes/Actions tabs, and Context/Node Details tabs. Type colour, importance, confidence, link relevance, selected state, hover state, pin state, and central state determine visual prominence. The force layout is a deterministic in-memory projection; only explicit layout, drag, pin, central, and editing actions persist through Core workers. Pin and central state are narrow node metadata fields (`mindmap_pinned` and `mindmap_central`) rather than a second persistence mechanism.
+
+Visual force motion uses a 33 ms timer only while a changed small graph is moving. It stops after stable motion or a fixed tick bound and never persists timer positions. Live simulation is limited to 120 nodes; explicit synchronous force layout is limited to 80 nodes so its quadratic work cannot stall the GUI. Larger graphs retain their stored positions until a future background layout engine is available.
 
 The prior application's direct source-file opening, filesystem-derived previews, and source-file editing are intentionally excluded. The Mind Map has no direct disk/source-file access: stored node fields are the only context shown by the GUI.
 

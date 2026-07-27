@@ -5,6 +5,7 @@
 - Add undo/redo transaction history.
 - Add node grouping, containers, collapse/expand, and multiple graph workspaces.
 - Add richer layout engines while preserving positions locked either manually or by `mindmap_pinned` metadata.
+- Add a background or progressively computed layout engine for graphs above the current 80-node synchronous layout cap.
 - Add link endpoint handles and direct drag-to-connect interaction.
 - Add source-opening adapters so a chat/sheet/material node can jump to its original object.
 - Any future source-opening adapter must be Core-mediated and permission-guarded; the Mind Map GUI must not read, edit, or open source paths directly.

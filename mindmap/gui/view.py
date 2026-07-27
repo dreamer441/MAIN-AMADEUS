@@ -6,7 +6,7 @@ import math
 from collections.abc import Callable
 from typing import Any
 
-from PyQt6.QtCore import QEventLoop, QObject, QRectF, Qt, QThread, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QEventLoop, QObject, QRectF, Qt, QThread, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QPainter
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGraphicsScene,
     QGraphicsView,
     QHBoxLayout,
@@ -26,7 +27,6 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
-    QSplitter,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -225,6 +225,13 @@ class LinkDialog(QDialog):
 class MindMapView(QWidget):
     """Main Mind Map page; all mutations route through AMADEUS Core."""
 
+    MAX_LIVE_SIMULATION_NODES = 120
+    MAX_AUTO_LAYOUT_NODES = 80
+    PHYSICS_INTERVAL_MS = 33
+    PHYSICS_SETTLE_DISTANCE = 0.15
+    PHYSICS_SETTLE_TICKS = 4
+    PHYSICS_MAX_TICKS = 240
+
     graph_changed = pyqtSignal(object)
     worker_succeeded = pyqtSignal(object, object)
     worker_failed = pyqtSignal(str, str)
@@ -239,6 +246,12 @@ class MindMapView(QWidget):
         self.link_items: dict[str, GraphLinkItem] = {}
         self._nodes_by_id: dict[str, GraphNode] = {}
         self.physics: GraphPhysics | None = None
+        self._layout_signature: tuple[object, ...] | None = None
+        self._physics_ticks = 0
+        self._settled_physics_ticks = 0
+        self._physics_timer = QTimer(self)
+        self._physics_timer.setInterval(self.PHYSICS_INTERVAL_MS)
+        self._physics_timer.timeout.connect(self._advance_physics)
         self._refreshing = False
         self._busy = False
         self._refresh_pending = False
@@ -264,37 +277,66 @@ class MindMapView(QWidget):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        title_row = QHBoxLayout()
-        title = QLabel("Mind Map / Relevance Graph")
-        title.setStyleSheet("font-size: 21px; font-weight: bold;")
-        self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet("color: #667085;")
-        title_row.addWidget(title)
-        title_row.addStretch()
-        title_row.addWidget(self.status_label)
+        root.setSpacing(12)
+        title = QLabel("AMADEUS Mind Map")
+        title.setObjectName("MindMapTitle")
+        subtitle = QLabel(
+            "This space shows AMADEUS chats, memories, features, tasks, bugs, sheets, materials, and links."
+        )
+        subtitle.setObjectName("MindMapSubtitle")
+        subtitle.setWordWrap(True)
 
-        toolbar = QHBoxLayout()
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search title, type, description, content...")
-        self.search_input.returnPressed.connect(self._search)
-        search_button = QPushButton("Search")
-        search_button.clicked.connect(self._search)
-        toolbar.addWidget(self.search_input)
-        toolbar.addWidget(search_button)
+        panels = QHBoxLayout()
+        panels.setSpacing(12)
+        left_panel = self._create_panel("Mind Map")
+        left_panel.layout().addWidget(self._build_left_panel())
+        center_panel = self._create_panel("Graph Space")
+        center_panel.layout().addWidget(self.canvas, 1)
+        right_panel = self._create_panel("Context / Node Details")
+        right_panel.layout().addWidget(self._build_properties_panel())
+        panels.addWidget(left_panel, 1)
+        panels.addWidget(center_panel, 3)
+        panels.addWidget(right_panel, 2)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self._build_left_panel())
-        splitter.addWidget(self.canvas)
-        splitter.addWidget(self._build_properties_panel())
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 4)
-        splitter.setStretchFactor(2, 2)
-        splitter.setSizes([250, 900, 310])
-        self._busy_widgets = (*self.action_buttons.values(), self.search_input, search_button)
+        self.status_label = QLabel("Ready.")
+        self.status_label.setObjectName("MindMapStatus")
+        self._busy_widgets = (*self.action_buttons.values(), self.search_input, self.search_button)
+        root.addWidget(title)
+        root.addWidget(subtitle)
+        root.addLayout(panels, 1)
+        root.addWidget(self.status_label)
+        self._apply_styles()
 
-        root.addLayout(title_row)
-        root.addLayout(toolbar)
-        root.addWidget(splitter)
+    def _create_panel(self, title: str) -> QFrame:
+        """Create one legacy-compatible framed workspace panel."""
+        panel = QFrame()
+        panel.setObjectName("MindMapPanel")
+        layout = QVBoxLayout(panel)
+        layout.setSpacing(8)
+        header = QLabel(title)
+        header.setObjectName("PanelHeader")
+        layout.addWidget(header)
+        return panel
+
+    def _apply_styles(self) -> None:
+        """Apply the legacy Mind Map palette without changing application-wide styling."""
+        self.setStyleSheet(
+            """
+            QWidget { background-color: #050505; color: #f2f2f2; }
+            QLabel#MindMapTitle { font-family: Segoe UI; font-size: 26px; font-weight: 800; color: #ffffff; }
+            QLabel#MindMapSubtitle { font-family: Segoe UI; font-size: 13px; color: #aaaaaa; }
+            QLabel#MindMapStatus { font-family: Segoe UI; font-size: 12px; color: #bbbbbb; padding: 4px 2px; }
+            QFrame#MindMapPanel { background-color: #0b0b0b; border: 1px solid #333333; border-radius: 12px; padding: 10px; }
+            QLabel#PanelHeader { font-family: Segoe UI; font-size: 14px; font-weight: 700; color: #f2f2f2; }
+            QListWidget, QTextEdit, QLineEdit, QTabWidget::pane { background-color: #111111; color: #ffffff; border: 1px solid #444444; border-radius: 10px; padding: 8px; font-family: Segoe UI; font-size: 13px; }
+            QTabBar::tab { background-color: #171717; color: #dddddd; border: 1px solid #333333; border-bottom: none; padding: 7px 12px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-family: Segoe UI; }
+            QTabBar::tab:selected { background-color: #242424; color: #ffffff; }
+            QPushButton { background-color: #171717; color: #f2f2f2; border: 1px solid #444444; border-radius: 7px; padding: 7px 10px; font-family: Segoe UI; font-size: 13px; }
+            QPushButton:hover { background-color: #242424; border-color: #666666; }
+            QPushButton:disabled { color: #777777; border-color: #292929; }
+            QGraphicsView { background-color: #111111; border: 1px solid #444444; border-radius: 10px; }
+            """
+        )
 
     def _build_left_panel(self) -> QWidget:
         """Build navigation and actions without exposing graph storage to widgets."""
@@ -302,24 +344,41 @@ class MindMapView(QWidget):
         self.left_tabs = tabs
         nodes_tab = QWidget()
         nodes_layout = QVBoxLayout(nodes_tab)
+        nodes_layout.setContentsMargins(0, 0, 0, 0)
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search graph...")
+        self.search_input.returnPressed.connect(self._search)
+        self.search_button = QPushButton("Search")
+        self.search_button.clicked.connect(self._search)
+        search_row = QHBoxLayout()
+        search_row.addWidget(self.search_input)
+        search_row.addWidget(self.search_button)
         self.node_list = QListWidget()
         self.node_list.currentItemChanged.connect(self._select_list_node)
+        nodes_layout.addLayout(search_row)
         nodes_layout.addWidget(self.node_list)
         tabs.addTab(nodes_tab, "Nodes")
 
         actions_tab = QWidget()
         actions_layout = QVBoxLayout(actions_tab)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setSpacing(8)
         actions = (
-            ("New Node", self._create_node), ("Delete Selected", self._delete_selected),
-            ("Link Selected", self._link_selected_node), ("Unlink Selected", self._unlink_selected_node),
             ("Edit Selected", self._edit_selected), ("Pin Node", self._toggle_pin),
             ("Set as Central", self._toggle_central), ("Recenter Linked", self._recenter_linked),
-            ("Focus Selected", self._focus_selected), ("Force Layout", self._auto_layout),
-            ("Fit Graph", self._fit_graph), ("Refresh", self.refresh_graph),
+            ("Focus Selected", self._focus_selected),
+            ("New Node", self._create_node), ("Delete Selected", self._delete_selected),
+            ("Link Selected", self._link_selected_node), ("Unlink Selected", self._unlink_selected_node),
+            ("Force Layout", self._auto_layout), ("Fit Graph", self._fit_graph), ("Refresh", self.refresh_graph),
             ("Export JSON", self._export_graph), ("Import JSON", self._import_graph),
         )
         self.action_buttons: dict[str, QPushButton] = {}
-        for label, callback in actions:
+        for index, (label, callback) in enumerate(actions):
+            if index == 0:
+                actions_layout.addWidget(QLabel("Selected Node"))
+            if index == 5:
+                actions_layout.addSpacing(10)
+                actions_layout.addWidget(QLabel("Graph Editing"))
             button = QPushButton(label)
             button.clicked.connect(callback)
             actions_layout.addWidget(button)
@@ -331,6 +390,7 @@ class MindMapView(QWidget):
     def _build_properties_panel(self) -> QWidget:
         panel = QWidget()
         layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
         tabs = QTabWidget()
         self.right_tabs = tabs
         self.context_summary = QTextEdit()
@@ -343,7 +403,6 @@ class MindMapView(QWidget):
         )
         tabs.addTab(self.context_summary, "Context")
         tabs.addTab(self.selection_summary, "Node Details")
-        layout.addWidget(QLabel("Context / Node Details"))
         layout.addWidget(tabs)
         return panel
 
@@ -364,32 +423,57 @@ class MindMapView(QWidget):
         try:
             if not isinstance(snapshot, GraphSnapshot):
                 raise ValueError("Core returned an invalid mind map snapshot")
-            for item in self.link_items.values():
-                item.detach()
-            self.scene.clear()
-            self.node_items.clear()
-            self.link_items.clear()
+            self._stop_physics_motion()
             self._nodes_by_id = {node.node_id: node for node in snapshot.nodes}
-            self.physics = GraphPhysics(snapshot)
+            new_node_ids = set(self._nodes_by_id)
+            new_links_by_id = {link.link_id: link for link in snapshot.links}
+            layout_signature = self._physics_signature(snapshot)
+            topology_changed = layout_signature != self._layout_signature
+            projected_physics = GraphPhysics(snapshot)
 
+            # Links must leave before their endpoint items can be removed.
+            for link_id, item in tuple(self.link_items.items()):
+                link = new_links_by_id.get(link_id)
+                if link is None or (
+                    link.source_node_id != item.link.source_node_id
+                    or link.target_node_id != item.link.target_node_id
+                ):
+                    item.detach()
+                    self.scene.removeItem(item)
+                    del self.link_items[link_id]
+            for node_id, item in tuple(self.node_items.items()):
+                if node_id not in new_node_ids:
+                    self.scene.removeItem(item)
+                    del self.node_items[node_id]
             for node in snapshot.nodes:
-                item = GraphNodeItem(
-                    node,
-                    moved_callback=self._persist_node_position,
-                    hover_callback=self._show_hover_context,
-                    relevance=self.physics.nodes[node.node_id].relevance,
-                )
-                self.scene.addItem(item)
-                self.node_items[node.node_id] = item
+                item = self.node_items.get(node.node_id)
+                if item is None:
+                    item = GraphNodeItem(
+                        node,
+                        moved_callback=self._persist_node_position,
+                        hover_callback=self._show_hover_context,
+                        relevance=projected_physics.nodes[node.node_id].relevance,
+                    )
+                    self.scene.addItem(item)
+                    self.node_items[node.node_id] = item
+                else:
+                    item.update_node(node, projected_physics.nodes[node.node_id].relevance)
 
             for link in snapshot.links:
-                source = self.node_items.get(link.source_node_id)
-                target = self.node_items.get(link.target_node_id)
-                if source is None or target is None:
-                    continue
-                item = GraphLinkItem(link, source, target)
-                self.scene.addItem(item)
-                self.link_items[link.link_id] = item
+                item = self.link_items.get(link.link_id)
+                if item is None:
+                    source = self.node_items.get(link.source_node_id)
+                    target = self.node_items.get(link.target_node_id)
+                    if source is None or target is None:
+                        continue
+                    item = GraphLinkItem(link, source, target)
+                    self.scene.addItem(item)
+                    self.link_items[link.link_id] = item
+                else:
+                    item.update_link(link)
+
+            self.physics = projected_physics
+            self._layout_signature = layout_signature
 
             for node_id in selected_node_ids:
                 if node_id in self.node_items:
@@ -404,6 +488,8 @@ class MindMapView(QWidget):
             self._populate_node_list(snapshot.nodes)
             if snapshot.nodes and not selected_node_ids and not selected_link_ids:
                 self._fit_graph()
+            if topology_changed:
+                self._start_physics_motion()
         except Exception as error:
             self._show_error("Mind Map refresh failed", error)
         finally:
@@ -411,6 +497,68 @@ class MindMapView(QWidget):
         callbacks, self._after_refresh = self._after_refresh, []
         for callback in callbacks:
             callback()
+
+    @staticmethod
+    def _physics_signature(snapshot: GraphSnapshot) -> tuple[object, ...]:
+        """Return fields that require a fresh visual force projection."""
+        return (
+            tuple(
+                sorted(
+                    (
+                        node.node_id,
+                        node.importance,
+                        node.confidence,
+                        node.position_locked,
+                        bool(node.metadata.get("mindmap_pinned", False)),
+                        bool(node.metadata.get("mindmap_central", False)),
+                    )
+                    for node in snapshot.nodes
+                )
+            ),
+            tuple(
+                sorted(
+                    (link.link_id, link.source_node_id, link.target_node_id, link.strength)
+                    for link in snapshot.links
+                )
+            ),
+        )
+
+    def _start_physics_motion(self) -> None:
+        """Start bounded visual-only motion for graphs safe to simulate in the GUI."""
+        if self.physics is None or len(self.physics.nodes) < 2:
+            return
+        if len(self.physics.nodes) > self.MAX_LIVE_SIMULATION_NODES:
+            self.status_label.setText(
+                f"{len(self.physics.nodes)} nodes · live motion paused above {self.MAX_LIVE_SIMULATION_NODES} nodes"
+            )
+            return
+        self._physics_ticks = 0
+        self._settled_physics_ticks = 0
+        self._physics_timer.start()
+
+    def _advance_physics(self) -> None:
+        """Apply one inexpensive visual physics tick and stop after stability."""
+        if self.physics is None:
+            self._stop_physics_motion()
+            return
+        movement = self.physics.step()
+        for node_id, (x, y) in self.physics.positions().items():
+            item = self.node_items.get(node_id)
+            if item is not None:
+                item.setPos(x, y)
+        self._physics_ticks += 1
+        self._settled_physics_ticks = (
+            self._settled_physics_ticks + 1 if movement < self.PHYSICS_SETTLE_DISTANCE else 0
+        )
+        if self._settled_physics_ticks >= self.PHYSICS_SETTLE_TICKS or self._physics_ticks >= self.PHYSICS_MAX_TICKS:
+            self._stop_physics_motion()
+
+    def _stop_physics_motion(self) -> None:
+        """Stop repaint work as soon as the projection has settled or is replaced."""
+        if self._physics_timer.isActive():
+            self._physics_timer.stop()
+        if self.physics is not None:
+            self.physics.settle()
 
     def _populate_node_list(self, nodes: tuple[GraphNode, ...]) -> None:
         selected_ids = {item.node_id for item in self.scene.selectedItems() if isinstance(item, GraphNodeItem)}
@@ -519,6 +667,7 @@ class MindMapView(QWidget):
         self._active_workers.clear()
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt uses camelCase names.
+        self._stop_physics_motion()
         self._unsubscribe_graph_changes()
         self.shutdown_workers()
         super().closeEvent(event)
@@ -692,6 +841,12 @@ class MindMapView(QWidget):
     def _auto_layout(self) -> None:
         if self.physics is None or not self.physics.nodes:
             return
+        if len(self.physics.nodes) > self.MAX_AUTO_LAYOUT_NODES:
+            self.status_label.setText(
+                f"Force layout is limited to {self.MAX_AUTO_LAYOUT_NODES} nodes; this graph has {len(self.physics.nodes)}."
+            )
+            return
+        self._stop_physics_motion()
         self.physics.step(80)
         positions = {
             node_id: (x, y)

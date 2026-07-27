@@ -379,6 +379,70 @@ class MindMapGuiStateTests(unittest.TestCase):
         view.close()
         self.assertTrue(core.unsubscribed)
 
+    def test_unchanged_snapshot_reconciles_existing_scene_items(self) -> None:
+        from mindmap.gui import MindMapView
+
+        class Core:
+            def subscribe_mind_map(self, _listener) -> None:
+                pass
+
+        first = GraphNode("first", "main", "idea", "First", position_x=10, position_y=20)
+        second = GraphNode("second", "main", "task", "Second", position_x=80, position_y=20)
+        link = GraphLink("link", "main", "first", "second", "related_to")
+        snapshot = GraphSnapshot("main", (first, second), (link,))
+        view = MindMapView(Core(), refresh_on_init=False)
+        view._render_snapshot(snapshot)
+        node_item = view.node_items["first"]
+        link_item = view.link_items["link"]
+
+        with patch.object(view.scene, "clear") as clear_scene:
+            view._render_snapshot(snapshot)
+
+        clear_scene.assert_not_called()
+        self.assertIs(node_item, view.node_items["first"])
+        self.assertIs(link_item, view.link_items["link"])
+        view.close()
+
+    def test_visual_physics_timer_stops_after_stable_ticks(self) -> None:
+        from mindmap.gui import MindMapView
+
+        class Core:
+            def subscribe_mind_map(self, _listener) -> None:
+                pass
+
+        first = GraphNode("first", "main", "idea", "First", position_locked=True)
+        second = GraphNode("second", "main", "idea", "Second", position_locked=True, position_x=50)
+        view = MindMapView(Core(), refresh_on_init=False)
+        view._render_snapshot(GraphSnapshot("main", (first, second), ()))
+
+        self.assertTrue(view._physics_timer.isActive())
+        for _ in range(view.PHYSICS_SETTLE_TICKS):
+            view._advance_physics()
+        self.assertFalse(view._physics_timer.isActive())
+        self.assertEqual(0.0, view.physics.nodes["first"].vx)
+        view.close()
+
+    def test_auto_layout_does_not_step_oversized_graph(self) -> None:
+        from mindmap.gui import MindMapView
+
+        class Core:
+            def subscribe_mind_map(self, _listener) -> None:
+                pass
+
+        nodes = tuple(
+            GraphNode(f"node-{index}", "main", "idea", f"Node {index}", position_x=index * 10)
+            for index in range(MindMapView.MAX_AUTO_LAYOUT_NODES + 1)
+        )
+        view = MindMapView(Core(), refresh_on_init=False)
+        view._render_snapshot(GraphSnapshot("main", nodes, ()))
+
+        with patch.object(view.physics, "step") as step:
+            view._auto_layout()
+
+        step.assert_not_called()
+        self.assertIn("limited", view.status_label.text())
+        view.close()
+
 
 if __name__ == "__main__":
     unittest.main()

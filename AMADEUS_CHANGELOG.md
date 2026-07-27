@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-27 - Mind Map Legacy Visual and Rendering Performance Port
+
+- Date: 2026-07-27
+- Phase: Mind Map GUI visual compatibility and performance
+- Feature or fix: Ported the legacy Mind Map workspace styling and removed ordinary-refresh scene recreation.
+- What changed: Restored the legacy dark title/subtitle/status typography, framed Nodes/Actions, Graph Space, and Context/Node Details panel hierarchy, palette, spacing, borders, and grouped controls. Snapshot rendering now reconciles graph items by ID. Visual-only force motion uses a bounded 33 ms timer that settles and stops; live motion and synchronous auto-layout have 120- and 80-node caps respectively.
+- Files/modules affected: `mindmap/gui/view.py`, `mindmap/gui/items.py`, `mindmap/gui/physics.py`, focused Mind Map tests, Mind Map documentation, and this changelog.
+- User-visible behavior: The page visually matches the legacy workspace while ordinary refreshes retain existing graph items and large graphs avoid GUI-thread force-layout stalls.
+- Architecture notes: Core-only, QThread, SQLite, and identifier-only notification boundaries remain unchanged. Legacy direct filesystem source open/edit behavior remains excluded. Timer positions are transient and never persisted.
+- Tests performed: Focused `py -3 -m unittest tests.test_mindmap` and `py -3 -m compileall mindmap tests` passed; full suite and full compile validation are run with this delivery.
+- Known limitations: Layout above 80 nodes is intentionally declined until a background layout engine is implemented.
+
 ## 2026-07-27 - Mind Map Position Lock Semantics
 
 - Date: 2026-07-27

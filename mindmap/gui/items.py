@@ -113,9 +113,12 @@ class GraphNodeItem(QGraphicsObject):
     def remove_link(self, link: "GraphLinkItem") -> None:
         self._links.discard(link)
 
-    def update_node(self, node: GraphNode) -> None:
+    def update_node(self, node: GraphNode, relevance: float | None = None) -> None:
+        """Refresh persisted fields while retaining this scene item's identity."""
         self.prepareGeometryChange()
         self.node = node
+        if relevance is not None:
+            self._relevance = max(0.0, min(1.0, relevance))
         if self.pos() != QPointF(node.position_x, node.position_y):
             self.setPos(node.position_x, node.position_y)
         self._apply_interaction_flags()
@@ -218,7 +221,7 @@ class GraphLinkItem(QGraphicsPathItem):
         del option, widget
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         width = 1.2 + self.link.strength * 2.2
-        color = QColor("#2563eb") if self.isSelected() else QColor("#718096")
+        color = QColor("#67e8f9") if self.isSelected() else QColor("#718096")
         painter.setPen(QPen(color, width))
         painter.setBrush(QBrush(color))
         painter.drawPath(self.path())
@@ -240,9 +243,10 @@ class GraphLinkItem(QGraphicsPathItem):
         midpoint = self.path().pointAtPercent(0.5)
         label = self.link.label or self.link.link_type.replace("_", " ")
         label_rect = QRectF(midpoint.x() - 65, midpoint.y() - 12, 130, 24)
-        painter.setPen(QPen(QColor("#2d3748")))
-        painter.setBrush(QBrush(QColor("#ffffff")))
+        painter.setPen(QPen(QColor("#444444")))
+        painter.setBrush(QBrush(QColor("#111111")))
         painter.drawRoundedRect(label_rect, 5, 5)
+        painter.setPen(QPen(QColor("#dddddd")))
         painter.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, label)
 
     def detach(self) -> None:

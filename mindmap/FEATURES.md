@@ -25,4 +25,7 @@
 - SQLite database paths must be relative to and contained by the configured project root.
 - Mind Map snapshot, search, mutation, import, export, and layout persistence run in Qt workers, with controls and canvas input disabled until each operation completes or fails. Layout coordinates persist through one atomic batch transaction.
 - Automated tests for persistence, links, cascade deletion, source upsert, retrieval, events, validation, and JSON round trips.
-- Focused deterministic physics and GUI state tests with no timer-based assertions.
+- Focused deterministic physics, scene-reconciliation, bounded-timer, and GUI state tests.
+- Legacy-compatible dark title/subtitle/status typography, framed three-panel layout, tabs, controls, borders, and spacing for the Mind Map page.
+- Incremental scene reconciliation preserves unchanged node and link item identities across graph snapshots; normal refreshes do not clear and recreate the scene.
+- Bounded 33 ms visual-only physics timer stops after stable motion or a fixed tick cap. Live motion is capped at 120 nodes and synchronous force layout at 80 nodes to avoid quadratic GUI-thread work on large graphs.

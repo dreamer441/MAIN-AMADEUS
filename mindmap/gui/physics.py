@@ -56,8 +56,9 @@ class GraphPhysics:
             for node in snapshot.nodes
         }
 
-    def step(self, steps: int = 1) -> None:
-        """Advance a bounded fixed timestep; pinned and dragged nodes stay fixed."""
+    def step(self, steps: int = 1) -> float:
+        """Advance fixed timesteps and return the largest node displacement."""
+        largest_displacement = 0.0
         for _ in range(max(0, steps)):
             forces = {node_id: [0.0, 0.0] for node_id in self.nodes}
             node_list = list(self.nodes.values())
@@ -100,6 +101,13 @@ class GraphPhysics:
                 node.vy = max(-24.0, min(24.0, (node.vy + fy) * 0.82))
                 node.x += node.vx
                 node.y += node.vy
+                largest_displacement = max(largest_displacement, math.hypot(node.vx, node.vy))
+        return largest_displacement
+
+    def settle(self) -> None:
+        """Discard transient velocity when the view stops visual motion."""
+        for node in self.nodes.values():
+            node.vx = node.vy = 0.0
 
     def positions(self) -> dict[str, tuple[float, float]]:
         """Return only coordinates that a view may later choose to persist."""
