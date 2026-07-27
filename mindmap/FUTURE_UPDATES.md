@@ -32,5 +32,5 @@
 - Do not automatically delete nodes based only on a low score.
 - Do not treat stored reward/decay fields as implemented intelligence until their real update logic exists.
 - Keep Inner Brain reasoning separate from graph storage and visualization.
-- Preserve atomic import semantics: future bulk importers must validate before entering the repository transaction and must not publish graph data in invalidation notifications.
+- Preserve atomic import semantics: future bulk importers must validate their source schema before entering the repository transaction and must not publish graph data in invalidation notifications.
 - Keep long-running graph I/O in Qt workers; scene and widget updates must remain on the GUI thread.

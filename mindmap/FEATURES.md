@@ -14,7 +14,7 @@
 - Node properties: type, title, description, content, importance, confidence, status, position, lock state, source reference, metadata, timestamps.
 - Link properties: type, label, strength, confidence, permanence, evidence, temporary state, expiry/decay fields, usage and reward/punishment placeholders, source reference, metadata, timestamps.
 - SQLite persistence with foreign keys, cascade deletion, indexes, WAL mode, and source identity uniqueness.
-- Portable JSON graph export and fully validated JSON import; replacement imports are one SQLite transaction, so invalid records or write failures preserve the prior graph.
+- Portable JSON graph export and fully validated JSON import. Imports require the AMADEUS graph schema (`graph_id`, `nodes`, and `links`) before any persistence work; replacement imports are one SQLite transaction, so chat exports, text files, invalid records, or write failures preserve the prior graph.
 - Search across title, type, description, and content.
 - Bounded local-neighborhood retrieval up to five graph steps.
 - Generic `upsert_source_node` integration seam for Chat Registry, Sheets, Materials, Memory, and the future Creation Module.

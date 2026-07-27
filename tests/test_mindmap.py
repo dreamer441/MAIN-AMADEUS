@@ -210,7 +210,10 @@ class MindMapCoreTests(unittest.TestCase):
     def test_replace_import_rolls_back_on_invalid_record_and_persistence_failure(self) -> None:
         original = self.core.create_mind_map_node(title="Existing graph")
         invalid_import = self.project_root / "invalid_graph.json"
-        invalid_import.write_text(json.dumps({"nodes": [{"node_id": "broken"}], "links": []}), encoding="utf-8")
+        invalid_import.write_text(
+            json.dumps({"graph_id": "main", "nodes": [{"node_id": "broken"}], "links": []}),
+            encoding="utf-8",
+        )
 
         with self.assertRaises(ValueError):
             self.core.import_mind_map(invalid_import, replace_graph=True)
@@ -218,12 +221,30 @@ class MindMapCoreTests(unittest.TestCase):
 
         valid_import = self.project_root / "valid_graph.json"
         valid_import.write_text(
-            json.dumps({"nodes": [{"node_id": "new", "title": "Replacement"}], "links": []}),
+            json.dumps({"graph_id": "main", "nodes": [{"node_id": "new", "title": "Replacement"}], "links": []}),
             encoding="utf-8",
         )
         with patch.object(self.core.mind_map_module.repository, "_insert_node", side_effect=sqlite3.OperationalError("disk full")):
             with self.assertRaises(sqlite3.OperationalError):
                 self.core.import_mind_map(valid_import, replace_graph=True)
+        self.assertEqual([original.node_id], [node.node_id for node in self.core.get_mind_map_snapshot().nodes])
+
+    def test_replace_import_rejects_chat_json_and_text_without_clearing_graph(self) -> None:
+        original = self.core.create_mind_map_node(title="Existing graph")
+        chat_export = self.project_root / "chat_export.json"
+        chat_export.write_text(
+            json.dumps({"chat": {"title": "Unrelated chat"}, "messages": []}),
+            encoding="utf-8",
+        )
+        text_export = self.project_root / "chat_export.txt"
+        text_export.write_text("Chat Export: Unrelated chat", encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "Mind Map JSON export"):
+            self.core.import_mind_map(chat_export, replace_graph=True)
+        self.assertEqual([original.node_id], [node.node_id for node in self.core.get_mind_map_snapshot().nodes])
+
+        with self.assertRaises(json.JSONDecodeError):
+            self.core.import_mind_map(text_export, replace_graph=True)
         self.assertEqual([original.node_id], [node.node_id for node in self.core.get_mind_map_snapshot().nodes])
 
     def test_repository_database_path_cannot_escape_project_root(self) -> None:

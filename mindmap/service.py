@@ -486,8 +486,14 @@ class MindMapService:
         raw = json.loads(Path(source).read_text(encoding="utf-8"))
         if not isinstance(raw, dict):
             raise ValueError("Mind map import must contain a JSON object")
-        raw_nodes = raw.get("nodes", [])
-        raw_links = raw.get("links", [])
+        # Reject unrelated JSON before replacement can clear the persisted graph.
+        required_fields = ("graph_id", "nodes", "links")
+        if any(field not in raw for field in required_fields):
+            raise ValueError("Mind map import must be an AMADEUS Mind Map JSON export")
+        if not isinstance(raw["graph_id"], str) or not raw["graph_id"].strip():
+            raise ValueError("Mind map import graph_id must be a non-empty string")
+        raw_nodes = raw["nodes"]
+        raw_links = raw["links"]
         if not isinstance(raw_nodes, list) or not isinstance(raw_links, list):
             raise ValueError("Mind map import nodes and links must be lists")
 

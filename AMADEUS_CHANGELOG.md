@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-27 - Mind Map Import Schema Safeguard
+
+- Date: 2026-07-27
+- Phase: Mind Map reliability
+- Feature or fix: Prevented unrelated JSON imports from clearing a Mind Map when replacement mode is selected.
+- What changed: Mind Map imports now require the AMADEUS export schema: a non-empty `graph_id` plus `nodes` and `links` fields. Validation happens before node parsing and before the SQLite transaction, so a chat export JSON file is rejected without modifying graph data. Plain text imports continue to fail JSON parsing before any graph operation.
+- Files/modules affected: `mindmap/service.py`, `tests/test_mindmap.py`, Mind Map documentation, root README, and this changelog.
+- User-visible behavior: Choosing a chat JSON file or text file in Mind Map Import shows an error and leaves the current graph unchanged, including when Replace is selected.
+- Architecture notes: The service owns the file-schema boundary. The repository continues to receive only fully validated `GraphNode` and `GraphLink` objects inside its atomic transaction.
+- Tests performed: Focused Mind Map regression tests cover rejected chat JSON and text imports while preserving the existing graph. Full compile and test validation are run with this delivery.
+- Known limitations: This does not reconstruct graph data already replaced by a prior empty import; recovery requires an earlier Mind Map JSON export or another backup.
+
 ## 2026-07-27 - Mind Map Callable Chat Retrieval
 
 - Date: 2026-07-27
