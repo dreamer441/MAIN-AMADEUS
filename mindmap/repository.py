@@ -12,6 +12,8 @@ from typing import Any, Iterator
 
 from mindmap.models import GraphLink, GraphNode, SourceReference
 
+MAX_RECENT_NODE_LIMIT = 100
+
 
 class SQLiteMindMapRepository:
     """Store graph objects locally without requiring an external graph server.
@@ -113,6 +115,8 @@ class SQLiteMindMapRepository:
                     ON mindmap_nodes(graph_id);
                 CREATE INDEX IF NOT EXISTS idx_mindmap_nodes_title
                     ON mindmap_nodes(graph_id, title);
+                CREATE INDEX IF NOT EXISTS idx_mindmap_nodes_recent
+                    ON mindmap_nodes(graph_id, updated_at DESC, node_id DESC);
                 CREATE INDEX IF NOT EXISTS idx_mindmap_links_graph
                     ON mindmap_links(graph_id);
                 CREATE INDEX IF NOT EXISTS idx_mindmap_links_source
@@ -206,6 +210,22 @@ class SQLiteMindMapRepository:
             rows = connection.execute(
                 "SELECT * FROM mindmap_nodes WHERE graph_id = ? ORDER BY created_at, node_id",
                 (graph_id,),
+            ).fetchall()
+        return [self._node_from_row(row) for row in rows]
+
+    def list_recent_nodes(self, graph_id: str, limit: int) -> list[GraphNode]:
+        """Return a bounded, newest-first node window for one graph."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= MAX_RECENT_NODE_LIMIT:
+            raise ValueError(f"limit must be between 1 and {MAX_RECENT_NODE_LIMIT}")
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM mindmap_nodes
+                WHERE graph_id = ?
+                ORDER BY updated_at DESC, node_id DESC
+                LIMIT ?
+                """,
+                (graph_id, limit),
             ).fetchall()
         return [self._node_from_row(row) for row in rows]
 

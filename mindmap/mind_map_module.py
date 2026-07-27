@@ -31,6 +31,10 @@ class MindMapModule:
     def list_nodes(self) -> list[GraphNode]:
         return self.service.list_nodes()
 
+    def list_recent_nodes(self, limit: int) -> list[GraphNode]:
+        """Return a bounded newest-first node window for external consumers."""
+        return self.service.list_recent_nodes(limit)
+
     def list_links(self) -> list[GraphLink]:
         return self.service.list_links()
 

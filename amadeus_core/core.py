@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from annotation_module import AnnotationContext, AnnotationParser, AnnotationRegistry, AnnotationResult, AnnotationSuggestionService, CallableContextRouter, ParsedAnnotation, ParsedAnnotationMessage
-from annotation_module.annotations import ExportAnnotation, FileAnnotation, IdentityAnnotation, MemoryAnnotation, SheetAnnotation
+from annotation_module.annotations import ExportAnnotation, FileAnnotation, IdentityAnnotation, MemoryAnnotation, MindMapAnnotation, SheetAnnotation
 from amadeus_chat import AmadeusChatModule
 from amadeus_core.module_registry import ModuleRegistry
 from amadeus_trace import TraceLogger
@@ -123,6 +123,7 @@ class AmadeusCore:
             memory_service=self.memory_service,
             sheet_service=self.sheet_service,
             export_service=self.export_service,
+            mind_map_module=self.mind_map_module,
             annotation_parser=self.annotation_parser,
             current_chat_id_provider=self.chat_history_store.get_current_chat_id,
         )
@@ -133,6 +134,7 @@ class AmadeusCore:
             current_chat_id_provider=self.chat_history_store.get_current_chat_id,
             sheet_service=self.sheet_service,
             export_service=self.export_service,
+            mind_map_module=self.mind_map_module,
             context_builder=self.context_builder,
             identity_prompt_builder=self.identity_prompt_builder,
             chat_module_provider=lambda: self.module_registry.get("chat"),
@@ -176,6 +178,7 @@ class AmadeusCore:
         self.annotation_registry.register("memory", MemoryAnnotation())
         self.annotation_registry.register("sheet", SheetAnnotation())
         self.annotation_registry.register("export", ExportAnnotation())
+        self.annotation_registry.register("mindmap", MindMapAnnotation())
 
     def handle_user_message(
         self,
@@ -246,6 +249,12 @@ class AmadeusCore:
                 # then Chat answers using only that selected export segment as extra context.
                 if parsed_annotation.annotation_name == "export" and parsed_annotation.content.strip():
                     return self.callable_context_router.handle_export_prompt_request(parsed_annotation, clean_message, trace_logger)
+
+                # Mind Map retrieval is always callable context, including an omitted question.
+                # This keeps graph values out of deterministic annotation output and confines them
+                # to one explicit LLM request.
+                if parsed_annotation.annotation_name == "mindmap":
+                    return self.callable_context_router.handle_mindmap_prompt_request(parsed_annotation, clean_message, trace_logger)
 
                 trace_logger.add_plan(
                     source_module="core",

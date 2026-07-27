@@ -45,6 +45,7 @@
 
 - Chat prompt construction now tells the LLM that callable context selected by annotations is the primary source for that request.
 - This especially protects `[export][use][chat][range] prompt` from being overridden by current-chat assumptions.
+- `[mindmap]` retrieval uses this same callable-context boundary. Chat receives a bounded, explicitly labeled Mind Map source block from Annotation Module and never reads graph storage or performs graph searches itself.
 
 ## Flow Prompt Reuse
 

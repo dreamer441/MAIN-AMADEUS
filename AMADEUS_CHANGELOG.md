@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-27 - Mind Map Callable Chat Retrieval
+
+- Date: 2026-07-27
+- Phase: Explicit Mind Map retrieval
+- Feature or fix: Added bounded `[mindmap]` callable context for dedicated Chat.
+- What changed: Added `[mindmap][search text] question` search retrieval and `[mindmap] question` recent-node retrieval, both limited to 10 nodes. The callable router formats only node ID, title, type, description, content, importance, confidence, and status as explicitly labeled Mind Map source context. No-match requests call the LLM with an explicit no-context block; retrieval failures return a safe response without an LLM call. Empty-query retrieval now uses the public SQL-bounded `list_recent_nodes()` facade rather than materializing the full graph.
+- Files/modules affected: `annotation_module`, `amadeus_core`, `mindmap`, `amadeus_chat`, focused annotation tests, root/module documentation, and this changelog.
+- User-visible behavior: Dato can ask Chat about explicit bounded Mind Map data without manually copying nodes into the prompt.
+- Architecture notes: Core injects the registered `MindMapModule` facade into `CallableContextRouter`; search uses `search_nodes()` and empty retrieval uses `list_recent_nodes()`, which accepts a validated 1 to 100 node limit in the service and repository SQL query. Chat and Annotation Module do not access graph SQLite, repositories, links, source references, or arbitrary node metadata. Process events use generic summaries and exclude query/node values and raw errors.
+- Tests performed: Focused parser, Core annotation, and Mind Map callable retrieval tests passed. Full suite and compile validation are run with this delivery.
+- Known limitations: Recent retrieval is intentionally capped at 100 nodes; broader semantic and graph-traversal retrieval remain future work.
+
 ## 2026-07-27 - Mind Map Legacy Visual and Rendering Performance Port
 
 - Date: 2026-07-27

@@ -236,6 +236,7 @@ class CallableContextMonitorTests(unittest.TestCase):
                 build_prompt_context=lambda _selection: "export context",
                 build_materials_panel_payload=lambda *_args: {"type": "materials"},
             ),
+            mind_map_module=SimpleNamespace(search_nodes=lambda *_args, **_kwargs: [], list_nodes=lambda: []),
             context_builder=SimpleNamespace(build_for_message=lambda *_args, **_kwargs: context_bundle),
             identity_prompt_builder=SimpleNamespace(build_for_chat=lambda **_kwargs: "identity"),
             chat_module_provider=lambda: _FakeChat(),

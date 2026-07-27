@@ -58,6 +58,19 @@ class MindMapCoreTests(unittest.TestCase):
         self.assertEqual([], list(snapshot.links))
         self.assertEqual("node_deleted", changes[-1]["event_type"])
 
+    def test_recent_node_retrieval_is_bounded_and_newest_first(self) -> None:
+        first = self.core.create_mind_map_node(title="First")
+        second = self.core.create_mind_map_node(title="Second")
+        self.core.update_mind_map_node(first.node_id, description="Updated last")
+
+        recent = self.core.mind_map_module.list_recent_nodes(1)
+
+        self.assertEqual([first.node_id], [node.node_id for node in recent])
+        with self.assertRaisesRegex(ValueError, "between 1 and 100"):
+            self.core.mind_map_module.list_recent_nodes(0)
+        with self.assertRaisesRegex(ValueError, "between 1 and 100"):
+            self.core.mind_map_module.list_recent_nodes(101)
+
     def test_source_upsert_and_json_round_trip_use_core_wrappers(self) -> None:
         created = self.core.upsert_mind_map_source_node(
             source_type="sheet",

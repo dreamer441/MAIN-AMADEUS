@@ -12,6 +12,7 @@ from annotation_module.annotation_parser import AnnotationParser
 from export_module import ChatExportService
 from identity_module import IdentityService
 from memory_module import MemoryService
+from mindmap import MindMapModule
 from project_file_reader import ProjectFileReader
 from sheets_module import SheetService
 
@@ -31,5 +32,6 @@ class AnnotationContext:
     memory_service: MemoryService
     sheet_service: SheetService
     export_service: ChatExportService
+    mind_map_module: MindMapModule
     annotation_parser: AnnotationParser
     current_chat_id_provider: Callable[[], str]

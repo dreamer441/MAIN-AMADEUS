@@ -51,6 +51,8 @@ AMADEUS Core is the lightweight coordinator. It routes user messages to the corr
 - The Mind Map GUI calls these wrappers only; Core does not implement graph storage, layout, or source-adapter policy.
 - Mind Map mutation events are real ordered operation boundaries with generic summaries and generic failed terminals that exclude graph content, labels, user errors, backend details, and hidden reasoning.
 - Mind Map subscriptions are redacted invalidation notices containing only operation/entity identifiers, graph ID, and timestamp; consumers retrieve graph details through Core snapshots.
+- Core registers `[mindmap]` and injects the `MindMapModule` facade into Annotation Module's callable-context router. Prompt-bearing Mind Map annotations retrieve through `search_nodes()` or SQL-bounded `list_recent_nodes()` only, never through SQLite.
+- Mind Map query events report started, retrieved, no-match, or failed boundaries with generic summaries; node values, query text, and backend errors remain out of Process Monitor events.
 
 ## Important boundary
 

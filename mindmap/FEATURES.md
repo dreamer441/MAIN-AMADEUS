@@ -29,3 +29,4 @@
 - Legacy-compatible dark title/subtitle/status typography, framed three-panel layout, tabs, controls, borders, and spacing for the Mind Map page.
 - Incremental scene reconciliation preserves unchanged node and link item identities across graph snapshots; normal refreshes do not clear and recreate the scene.
 - Bounded 33 ms visual-only physics timer stops after stable motion or a fixed tick cap. Live motion is capped at 120 nodes and synchronous force layout at 80 nodes to avoid quadratic GUI-thread work on large graphs.
+- Explicit Chat retrieval is available through `[mindmap][search text] question` and `[mindmap] question`. Search uses the module facade's `search_nodes()` API; empty retrieval uses its SQL-bounded `list_recent_nodes()` API, which accepts 1 to 100 nodes and returns newest-first nodes without materializing the graph. Chat and Annotation Module never access the repository.

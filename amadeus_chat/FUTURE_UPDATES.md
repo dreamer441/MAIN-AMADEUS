@@ -38,6 +38,7 @@
 
 - [ ] Add per-source prompt templates for sheet/export/panel/current contexts instead of one generic callable context block.
 - [ ] Add source citations or message-number references in AMADEUS answers when using exported segments.
+- [ ] Add source-specific response citations for explicitly retrieved Mind Map node IDs.
 
 ## Flow Prompt Future Work
 

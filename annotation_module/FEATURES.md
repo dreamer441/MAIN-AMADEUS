@@ -80,6 +80,14 @@ The Annotation Module detects bracket-style commands such as `[file]` and routes
 - Export suggestions now prefer `[open]` and `[use]` so Dato can see whether he is only opening Materials or injecting context into AMADEUS.
 - Export prompt injection is scoped to the selected exported messages and should not fall back to current chat context.
 
+## Mind Map Retrieval Annotation
+
+- `[mindmap][search text] question` searches up to 10 matching Mind Map nodes and supplies them as one-request callable context.
+- `[mindmap] question` supplies at most 10 most recently updated available nodes; it never injects the whole graph.
+- Retrieved context contains only node ID, title, type, description, content, importance, confidence, and status. Arbitrary node metadata, source references, graph links, and storage internals are excluded.
+- Retrieval uses the injected `MindMapModule` public facade only. Annotation Module never accesses Mind Map SQLite storage.
+- A no-match result remains an explicit no-context callable block so Chat can answer honestly; retrieval failures return a safe readable response without calling Chat.
+
 ## Phase 3 Annotation Engine V2
 
 - Annotations can appear anywhere in a complete message as independent blocks.

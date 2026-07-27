@@ -21,7 +21,7 @@ from mindmap.models import (
     GraphSnapshot,
     SourceReference,
 )
-from mindmap.repository import SQLiteMindMapRepository
+from mindmap.repository import MAX_RECENT_NODE_LIMIT, SQLiteMindMapRepository
 
 
 GraphListener = Callable[[dict[str, Any]], None]
@@ -68,6 +68,12 @@ class MindMapService:
 
     def list_nodes(self) -> list[GraphNode]:
         return self.repository.list_nodes(self.graph_id)
+
+    def list_recent_nodes(self, limit: int) -> list[GraphNode]:
+        """Return a bounded, newest-first node window without loading the graph."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= MAX_RECENT_NODE_LIMIT:
+            raise ValueError(f"limit must be between 1 and {MAX_RECENT_NODE_LIMIT}")
+        return self.repository.list_recent_nodes(self.graph_id, limit)
 
     def list_links(self) -> list[GraphLink]:
         return self.repository.list_links(self.graph_id)

@@ -1,4 +1,4 @@
-"""Callable-context annotation routing for sheets and exported chats.
+"""Callable-context annotation routing for sheets, exported chats, and Mind Map nodes.
 
 This router owns the feature-specific work required when an annotation selects a
 stored object and supplies the remaining annotation text as a normal chat prompt.
@@ -23,6 +23,7 @@ class CallableContextRouter:
         current_chat_id_provider: Callable[[], str],
         sheet_service: Any,
         export_service: Any,
+        mind_map_module: Any,
         context_builder: Any,
         identity_prompt_builder: Any,
         chat_module_provider: Callable[[], Any],
@@ -32,6 +33,7 @@ class CallableContextRouter:
         self._current_chat_id_provider = current_chat_id_provider
         self._sheet_service = sheet_service
         self._export_service = export_service
+        self._mind_map_module = mind_map_module
         self._context_builder = context_builder
         self._identity_prompt_builder = identity_prompt_builder
         self._chat_module_provider = chat_module_provider
@@ -161,6 +163,106 @@ class CallableContextRouter:
             response,
             trace_logger,
             side_panel=self._export_service.build_materials_panel_payload(selection),
+        )
+
+    def handle_mindmap_prompt_request(
+        self,
+        annotation: ParsedAnnotation,
+        original_message: str,
+        trace_logger: TraceLogger,
+    ) -> dict[str, Any]:
+        """Answer with bounded explicit Mind Map retrieval as callable context."""
+        trace_logger.add_event(
+            "module",
+            "Mind Map Query Started",
+            "Started bounded retrieval from the AMADEUS Mind Map.",
+        )
+        try:
+            query = annotation.arguments[0].strip() if annotation.arguments else ""
+            if query:
+                nodes = self._mind_map_module.search_nodes(query, limit=10)
+            else:
+                nodes = self._mind_map_module.list_recent_nodes(limit=10)
+        except Exception:
+            trace_logger.add_event(
+                "error",
+                "Mind Map Query Failed",
+                "Mind Map retrieval could not be completed.",
+                level="error",
+            )
+            response = "AMADEUS could not retrieve Mind Map context for that request. Please try again."
+            self._persist_completed_exchange(original_message, response, trace_logger)
+            trace_logger.add_event("output", "Output Ready", "Mind Map retrieval failure returned to GUI.", level="warning")
+            return self._build_response(response, trace_logger)
+
+        if nodes:
+            trace_logger.add_event(
+                "module",
+                "Mind Map Results Retrieved",
+                "Retrieved bounded Mind Map node context for this request.",
+                level="success",
+            )
+        else:
+            trace_logger.add_event(
+                "module",
+                "Mind Map No Matches",
+                "No Mind Map nodes matched the requested retrieval.",
+                level="warning",
+            )
+
+        trace_logger.add_plan(
+            source_module="annotation_module",
+            title="Mind Map Context Work Plan",
+            summary="Declared route: retrieve bounded Mind Map context, prepare an answer through the configured LLM, then store the completed exchange.",
+            route_intent="mindmap_context_llm_persist",
+        )
+        chat_module = self._chat_module_provider()
+        if chat_module is None:
+            return self._routing_error(trace_logger)
+
+        user_prompt = annotation.content.strip() or "Report the retrieved AMADEUS Mind Map context."
+        context_bundle = self._context_builder.build_for_message(user_prompt, trace_logger=trace_logger)
+        response = chat_module.handle_message(
+            user_prompt,
+            recent_conversation=context_bundle.recent_conversation,
+            project_context=context_bundle.project_context,
+            memory_context=context_bundle.memory_context,
+            chat_workspace_context=context_bundle.chat_workspace_context,
+            callable_context=self._format_mindmap_context(nodes),
+            identity_prompt=self._identity_prompt_builder.build_for_chat(
+                project_context_active=context_bundle.project_context_active,
+            ),
+            trace_logger=trace_logger,
+        )
+        self._persist_completed_exchange(original_message, response, trace_logger)
+        trace_logger.add_event("output", "Output Ready", "Response returned to GUI with Mind Map context.", level="success")
+        return self._build_response(response, trace_logger)
+
+    def _format_mindmap_context(self, nodes: list[Any]) -> str:
+        """Format only explicit node fields that are safe and relevant to retrieval."""
+        if not nodes:
+            return (
+                "[AMADEUS MIND MAP RETRIEVAL]\n"
+                "No matching Mind Map nodes were retrieved. Use this explicit no-context result as the source for this request."
+            )
+
+        records = []
+        for node in nodes:
+            records.append(
+                "\n".join((
+                    f"Node ID: {node.node_id}",
+                    f"Title: {node.title}",
+                    f"Node type: {node.node_type}",
+                    f"Description: {node.description}",
+                    f"Content: {node.content}",
+                    f"Safe metadata: importance={node.importance}, confidence={node.confidence}, status={node.status}",
+                ))
+            )
+        return (
+            "[AMADEUS MIND MAP RETRIEVAL]\n"
+            "The following bounded nodes were retrieved from AMADEUS Mind Map. "
+            "Use them as the source for this request; do not infer additional graph data.\n\n"
+            + "\n\n---\n\n".join(records)
         )
 
     def _sheet_error(self, original_message: str, response: str, trace_logger: TraceLogger, chat_id: str, scope: str) -> dict[str, Any]:

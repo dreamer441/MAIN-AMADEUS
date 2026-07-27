@@ -49,6 +49,14 @@ class AnnotationParserTests(unittest.TestCase):
         self.assertTrue(parsed_message.is_legacy_leading_annotation)
         self.assertEqual("explain this", parsed_message.blocks[0].annotation.content)
 
+    def test_mindmap_search_argument_and_question_are_preserved(self) -> None:
+        parsed = self.parser.parse("[mindmap][release notes] summarize the relevant work")
+
+        self.assertIsNotNone(parsed)
+        self.assertEqual("mindmap", parsed.annotation_name)  # type: ignore[union-attr]
+        self.assertEqual(["release notes"], parsed.arguments)  # type: ignore[union-attr]
+        self.assertEqual("summarize the relevant work", parsed.content)  # type: ignore[union-attr]
+
     def test_unknown_annotation_is_extracted_for_registry_handling(self) -> None:
         parsed = self.parser.parse_message("Before [not-real] inspect this [end] after")
 

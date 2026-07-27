@@ -58,6 +58,7 @@ Do not add memory, autonomy, file editing, Mind Map storage/layout, or reasoning
 - [ ] Add `[panel]` callable context.
 - [ ] Add `[current][message number]` callable context.
 - [ ] Add unified callable context service before Mind Map integration.
+- [x] Add bounded explicit `[mindmap]` callable retrieval through the injected Mind Map facade.
 
 ## Materials Routing Future
 

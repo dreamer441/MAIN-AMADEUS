@@ -51,6 +51,11 @@ Annotations should stay deterministic command routes. They should not become a p
 - [ ] Add keyboard-friendly range builder for export annotations.
 - [ ] Add Materials-panel controls that generate export annotations automatically.
 
+## Mind Map Annotation Future Work
+
+- [ ] Add guided `[mindmap]` search suggestions only through the Mind Map public facade.
+- [ ] Add typed callable-context provenance so Mind Map retrieval can preserve node counts without exposing node values in Process Monitor events.
+
 ## File Annotation Context
 
 - [x] Let Code Viewer context select one exact line (`15`) or an inclusive range (`15-30`).
