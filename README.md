@@ -54,7 +54,11 @@ py -3 main.py
 
 ## Current Scope
 
-This version includes a simple local Ollama LLM connection, the AMADEUS Identity Module, the AMADEUS Process Monitor, read-only `[identity]` annotations, deterministic read-only `[file]` annotations, a right-side Code Viewer, multiline input, guided annotation suggestions, and first multi-chat support. It does not include real reasoning, memory, skills, mind map, advanced permissions, streaming responses, or model picker UI yet.
+This version includes a simple local Ollama LLM connection, the AMADEUS Identity Module, the AMADEUS Process Monitor, read-only `[identity]` annotations, deterministic read-only `[file]` annotations, a right-side Code Viewer, multiline input, guided annotation suggestions, first multi-chat support, and a local Mind Map / Relevance Graph. It does not include real reasoning, skills, advanced permissions, streaming responses, or model picker UI yet.
+
+## Mind Map
+
+The persistent Mind Map page provides a local SQLite graph at `data/mindmap/mind_map.sqlite3` with node/link CRUD, position persistence, search, bounded-neighborhood retrieval, source-node upsert, JSON import/export, and a zoomable layout canvas. The GUI calls Core only; Core delegates graph behavior to the registered `mind_map` module. Graph mutation events report real ordered operation boundaries while excluding private titles, contents, labels, raw errors, and hidden reasoning. Mind Map runtime data is local and ignored by Git.
 
 ## Annotations
 
@@ -118,7 +122,7 @@ Each conversation has its own JSONL file. The GUI loads the active chat on start
 
 Flow is the home conversation, distinct from the dedicated chats managed on the Chats page. Its local JSONL history is stored separately under `data/flow_chat/`, so dedicated-chat selection or deletion cannot affect Flow.
 
-For a Flow request, Core supplies two separate context layers: Layer 0 is recent Flow history; Layer 1 is the current dedicated-chat registry metadata. Layer 1 includes only each chat's id, title, and description, never dedicated-chat message bodies. The registry reflects dedicated-chat creation, metadata edits, and deletion when Flow next builds context.
+For a Flow request, Core supplies two separate context layers: Layer 0 is recent Flow history; Layer 1 is the current dedicated-chat registry metadata. Layer 1 includes only each chat's id, title, description, priority, purpose, and scope, never dedicated-chat message bodies. Scope is descriptive in V1 and does not enable automatic cross-chat retrieval. The registry reflects dedicated-chat creation, metadata edits, and deletion when Flow next builds context.
 
 Flow and dedicated chat requests use the shared Process Monitor event system. The Flow page renders safe live event rows while a request runs, then reconciles them with Core's final event payload.
 
@@ -128,7 +132,7 @@ AMADEUS now follows two required development-maintenance rules:
 
 1. When a current or future feature is discussed or implemented, update the affected module docs, especially `FEATURES.md` and `FUTURE_UPDATES.md`.
 2. Code must include useful comments explaining architecture, ownership, data flow, and safety boundaries so Dato can read the project naturally.
-3. Runtime chats, comments, memory, sheets, and exports remain local under `data/` and must never be committed to Git.
+3. Runtime chats, comments, memory, sheets, exports, and Mind Map SQLite data remain local under `data/` and must never be committed to Git.
 
 The detailed rule file is:
 
@@ -148,7 +152,7 @@ docs/DEVELOPMENT_WORKFLOW_RULES.md
 ## Multi-Chat v1
 
 - Use the top chat selector to switch between local conversations.
-- `New Chat` opens a dialog for title and optional description, creates the workspace, and switches to it.
+- `New Chat` opens a dialog for title, description, priority, purpose, and scope; `Edit Chat` updates those fields for the active workspace without reloading its history.
 - `Delete Chat` asks for confirmation and removes the selected chat history file.
 - Chat switching also clears the right-side Process Monitor/Code Viewer state so old panel context is not confused with the newly selected chat.
 - Visible messages are numbered as `[1]`, `[2]`, `[3]`, preparing future `[current][number]` context injection.

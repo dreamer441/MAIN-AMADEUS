@@ -22,10 +22,10 @@
 - `AmadeusMainWindow` is a persistent sidebar shell with Flow Chat selected at startup.
 - Flow Chat keeps its own persistent history, Core-owned Flow request route, background worker, live Process Monitor, and safe busy/error recovery.
 - The existing dedicated-chat surface remains intact under the `Chats` navigation page, including chat management, annotations, and the full right-side workspace.
-- Code, Mind Map, and Habit Tracker are visibly named foundation-pending pages that retain their widgets when navigating.
+- Code and Habit Tracker are visibly named foundation-pending pages that retain their widgets when navigating.
 - The GUI receives Flow history through Core and never reads Flow storage directly.
 - Flow renders shared Process Monitor events as they arrive and replaces that provisional view with Core's completed event payload.
-- Code, Mind Map, and Habit Tracker are named placeholder areas only; they do not expose module routes or functionality.
+- Mind Map is a persistent Core-backed graph page with an interactive layout canvas, while Code and Habit Tracker remain named placeholder areas only.
 
 The Process Monitor shows real events such as input received, annotation check, routing decision, chat module use, LLM call status, errors, and output ready.
 
@@ -57,6 +57,8 @@ The Process Monitor shows real events such as input received, annotation check, 
 - Main chat messages are visibly numbered as `[1]`, `[2]`, `[3]`, and so on.
 - Message numbers are chat-local and are reconstructed from stored JSONL order when a chat loads.
 - `New Chat` now opens a dialog with title and optional description.
+- `New Chat` and `Edit Chat` collect title, description, priority, purpose, and scope; Edit Chat preserves the active transcript and UI state.
+- Chat controls, including Edit Chat, remain disabled while AMADEUS is answering.
 - Chat description is shown in the right-side Memory panel as current chat context.
 - Memory panel now combines current chat context with explicit memory lists when `[memory][list]` is used.
 - Contains comments explaining why message numbers support future `[current]` annotations and why chat descriptions are active chat context, not global memory.
@@ -141,3 +143,9 @@ The Process Monitor shows real events such as input received, annotation check, 
 ## Live Process Monitor Coverage
 
 - Material-backed chat requests now forward the existing safe Process Monitor events live, matching normal chat requests.
+
+## Mind Map Page
+
+- The Mind Map sidebar page uses `MindMapView` instead of the former placeholder without changing the order or persistence of other stacked pages.
+- The view receives snapshots and graph-change subscriptions through Core only, then renders its SQLite-backed nodes and links on a zoomable `QGraphicsView` canvas.
+- Node/link CRUD, drag position persistence, search, layout, and JSON import/export remain module-owned operations invoked through Core wrappers.

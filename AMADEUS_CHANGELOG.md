@@ -2,6 +2,42 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-27 - Mind Map Safety Hardening
+
+- Date: 2026-07-27
+- Phase: Mind Map V1 safety review fixes
+- Feature or fix: Made replacement imports atomic, redacted live subscriptions, contained SQLite paths, and moved graph work off the GUI thread.
+- What changed: Import records are fully validated before one repository transaction writes them; replacement failures preserve the old graph. Core subscriptions now publish identifier-only invalidation notices. The Mind Map page uses QThread workers with busy controls and GUI-thread rendering for snapshots, mutations, search, import/export, and layout persistence. Database paths reject absolute and escaping relative paths.
+- Files/modules affected: `mindmap`, `amadeus_core`, focused Mind Map tests, module/Core documentation, and this changelog.
+- User-visible behavior: Import failures leave the existing graph intact; the Mind Map remains responsive during SQLite and JSON work, with controls recovering after errors.
+- Architecture notes: Public notifications carry no graph fields or arbitrary metadata; GUI data continues to come from Core snapshots. SQLite remains module-owned and per-operation connections remain thread-safe.
+- Tests performed: Focused Mind Map Core/repository and offscreen PyQt worker tests, full suite, and compile validation are recorded with this delivery.
+- Known limitations: Imports and exports intentionally retain V1 user-selected file locations; only the module-managed SQLite database path is project-root-contained.
+
+## 2026-07-27 - Chat Registry V2
+
+- Date: 2026-07-27
+- Phase: Chat Registry V2
+- Feature or fix: Added validated dedicated-chat priority, purpose, and descriptive scope metadata.
+- What changed: Extended the existing chat JSON index and `ChatMetadata`, Core wrappers, Registry projection, Flow metadata formatting, and create/edit dialog. Legacy rows safely default to Normal/General/Local; invalid API values raise `ValueError`.
+- Files/modules affected: `storage`, `chat_registry`, `flow_chat`, `amadeus_core`, `amadeus_gui`, focused tests, module/root documentation, and this changelog.
+- User-visible behavior: New and existing chats can display and edit priority, purpose, and scope. Flow sees those metadata fields but never message bodies.
+- Architecture notes: No second registry or database was created. Scope remains descriptive in V1 and does not cause automatic cross-chat retrieval.
+- Tests performed: Focused Flow/storage/registry/Core and offscreen GUI tests, full unittest discovery, and compile validation are recorded with this delivery.
+- Known limitations: Scope has no retrieval behavior; any future cross-chat content access requires explicit user selection and permissions.
+
+## 2026-07-27 - Mind Map: Core And GUI Integration
+
+- Date: 2026-07-27
+- Phase: Mind Map integration
+- Feature or fix: Integrated the imported local Mind Map / Relevance Graph package through Core and replaced only the Mind Map GUI placeholder.
+- What changed: Core now constructs/registers `mind_map` and exposes graph snapshot, CRUD, move, search, neighborhood, source-upsert, import/export, and subscription wrappers. The stacked Mind Map page now uses `MindMapView`. Mutation events use truthful generic lifecycle summaries and generic failure terminals without private graph values or raw errors. Added Mind Map runtime Git ignore and `unittest` Core/GUI coverage.
+- Files/modules affected: `mindmap`, `amadeus_core`, `amadeus_gui`, `.gitignore`, focused tests, root/module documentation, and this changelog.
+- User-visible behavior: Mind Map navigation opens the persistent interactive graph canvas with local SQLite nodes/links, layout controls, search, and JSON import/export; other pages and navigation remain unchanged.
+- Architecture notes: GUI graph calls terminate at Core. Core delegates to the registered module facade; SQLite and PyQt scene ownership remain within Mind Map. Live subscriptions remain fault-isolated and process events omit titles, labels, contents, user errors, backend details, and hidden reasoning.
+- Tests performed: Focused Mind Map/Core and offscreen GUI tests, full unittest discovery, and compile validation are run with this delivery.
+- Known limitations: Source-opening adapters, undo/redo, multi-graph workspaces, and automated graph creation remain future work.
+
 ## 2026-07-27 - Process Monitor: Safe Global Enrichment
 
 - Date: 2026-07-27

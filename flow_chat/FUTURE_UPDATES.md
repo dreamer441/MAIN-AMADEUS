@@ -5,3 +5,4 @@
 - Add relevance ranking for metadata records without loading dedicated-chat bodies.
 - Keep any future persistence changes transactional at the full user/AMADEUS exchange boundary.
 - Do not treat Flow's current metadata-only registry as dedicated-chat content access.
+- Do not operationalize chat scope until explicit selection, permissions, and content boundaries are designed.

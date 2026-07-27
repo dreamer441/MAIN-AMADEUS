@@ -23,8 +23,9 @@
 
 ## Chat Workspace Metadata V2
 
-- Chat metadata now supports title, description, and a reserved summary field.
-- New chats can be created with title and description.
-- Existing chat indexes without description/summary are still accepted for backward compatibility.
+- Chat metadata supports title, description, reserved summary, priority, purpose, and scope fields.
+- Priority is validated as Critical, Important, Normal, Low, or Ignore; purpose as General, Project, Study, Development, or Other; scope as Local, Project, or Global.
+- New chats default to Normal/General/Local and can set all metadata fields during creation or editing.
+- Existing chat indexes without the V2 fields, or with invalid legacy values, safely load with those defaults.
 - Loaded messages include a computed chat-local `message_number` based on JSONL row order.
 - Message numbers are visible/UI references now and prepare future `[current][number]` retrieval.

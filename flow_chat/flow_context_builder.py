@@ -91,8 +91,9 @@ class FlowContextBuilder:
         """Render the registry's metadata-only view without accepting message content."""
         lines = [
             "[AVAILABLE DEDICATED CHATS]",
-            "These are metadata records only: chat id, title, and description.",
+            "These are metadata records only: chat id, title, description, priority, purpose, and scope.",
             "They are not chat history. Do not claim to know, read, or have access to any dedicated chat's full contents.",
+            "Scope is descriptive in V1 only; it does not enable automatic cross-chat retrieval.",
         ]
         if not metadata:
             lines.append("- No dedicated chats are currently available.")
@@ -104,6 +105,9 @@ class FlowContextBuilder:
                     f"- id: {chat.chat_id}",
                     f"  title: {chat.title}",
                     f"  description: {chat.description}",
+                    f"  priority: {chat.priority}",
+                    f"  purpose: {chat.purpose}",
+                    f"  scope: {chat.scope}",
                 )
             )
         return "\n".join(lines)

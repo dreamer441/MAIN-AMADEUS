@@ -7,7 +7,7 @@ bodies or depending on dedicated-chat storage internals.
 
 from dataclasses import dataclass
 
-from storage import ChatHistoryStore
+from storage import ChatHistoryStore, ChatPriority, ChatPurpose, ChatScope
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +17,9 @@ class ChatMetadata:
     chat_id: str
     title: str
     description: str
+    priority: ChatPriority
+    purpose: ChatPurpose
+    scope: ChatScope
 
 
 class ChatRegistry:
@@ -32,6 +35,9 @@ class ChatRegistry:
                 chat_id=chat.chat_id,
                 title=chat.title,
                 description=chat.description,
+                priority=chat.priority,
+                purpose=chat.purpose,
+                scope=chat.scope,
             )
             for chat in self._chat_history_store.list_chats()
         ]

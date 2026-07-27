@@ -1,6 +1,5 @@
 # Storage Future Updates
 
-- Add manual chat rename from the GUI.
 - Add chat search.
 - Add chat export/import tools.
 - Add schema/version fields for stored chat rows and chat index rows.
@@ -17,3 +16,4 @@
 - Treat generated chat summaries as callable context, not always-active memory.
 - Support staged retrieval: title -> description -> summary only when needed.
 - Add stable message IDs later if `[current]` needs stronger references than chat-local row numbers.
+- Keep scope descriptive until an explicit, permission-aware cross-chat retrieval design exists.

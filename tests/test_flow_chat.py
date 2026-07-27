@@ -264,7 +264,9 @@ class ChatRegistryTests(unittest.TestCase):
         self.temporary_directory.cleanup()
 
     def test_registry_projects_only_frozen_metadata_and_never_loads_messages(self) -> None:
-        chat = self.chat_store.create_chat("Private project", "Keep this description.")
+        chat = self.chat_store.create_chat(
+            "Private project", "Keep this description.", priority="Important", purpose="Project", scope="Project"
+        )
         self.chat_store.append_message("User", "Dedicated message body must stay private.", chat.chat_id)
 
         list_only_store = _ListOnlyChatStore(self.chat_store.list_chats())
@@ -273,8 +275,14 @@ class ChatRegistryTests(unittest.TestCase):
         self.assertIsNotNone(metadata)
         assert metadata is not None
         self.assertEqual(1, list_only_store.list_calls)
-        self.assertEqual(["chat_id", "title", "description"], [field.name for field in fields(metadata)])
+        self.assertEqual(
+            ["chat_id", "title", "description", "priority", "purpose", "scope"],
+            [field.name for field in fields(metadata)],
+        )
         self.assertEqual("Private project", metadata.title)
+        self.assertEqual("Important", metadata.priority)
+        self.assertEqual("Project", metadata.purpose)
+        self.assertEqual("Project", metadata.scope)
         self.assertNotIn("Dedicated message body must stay private.", repr(metadata))
         with self.assertRaises(AttributeError):
             getattr(metadata, "message")
@@ -284,6 +292,9 @@ class ChatRegistryTests(unittest.TestCase):
         self.assertIsNotNone(main)
         assert main is not None
         self.assertEqual("", main.description)
+        self.assertEqual("Normal", main.priority)
+        self.assertEqual("General", main.purpose)
+        self.assertEqual("Local", main.scope)
 
         created = self.chat_store.create_chat("Draft", "Initial description")
         self.assertEqual("Draft", self.registry.get_chat_metadata(created.chat_id).title)  # type: ignore[union-attr]
@@ -296,6 +307,34 @@ class ChatRegistryTests(unittest.TestCase):
         self.chat_store.delete_chat(created.chat_id)
         self.assertIsNone(self.registry.get_chat_metadata(created.chat_id))
         self.assertEqual(self.registry.list_chat_metadata(), self.registry.get_relevant_chat_metadata())
+
+    def test_legacy_metadata_rows_default_invalid_or_missing_typed_fields(self) -> None:
+        self.chat_store.index_path.write_text(
+            json.dumps(
+                {
+                    "current_chat_id": "legacy",
+                    "chats": [{
+                        "chat_id": "legacy", "title": "Legacy",
+                        "created_at": "2026-07-27T00:00:00+00:00", "updated_at": "2026-07-27T00:00:00+00:00",
+                        "priority": "Urgent", "purpose": 12, "scope": "Universe",
+                    }],
+                }
+            ),
+            encoding="utf-8",
+        )
+        migrated = self.chat_store.get_chat("legacy")
+        self.assertIsNotNone(migrated)
+        assert migrated is not None
+        self.assertEqual(("Normal", "General", "Local"), (migrated.priority, migrated.purpose, migrated.scope))
+
+    def test_create_and_update_validate_typed_metadata(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Invalid priority"):
+            self.chat_store.create_chat("Bad", priority="Urgent")  # type: ignore[arg-type]
+        chat = self.chat_store.create_chat("Typed", priority="Critical", purpose="Study", scope="Global")
+        updated = self.chat_store.update_chat_metadata(chat.chat_id, priority="Low", purpose="Other", scope="Project")
+        self.assertEqual(("Low", "Other", "Project"), (updated.priority, updated.purpose, updated.scope))
+        with self.assertRaisesRegex(ValueError, "Invalid scope"):
+            self.chat_store.update_chat_metadata(chat.chat_id, scope="Everywhere")  # type: ignore[arg-type]
 
 
 class _FakeLLM:
@@ -327,7 +366,9 @@ class FlowContextAndCoreTests(unittest.TestCase):
         flow_store = FlowChatStore(self.root)
         flow_store.append_message("User", "Prior Flow request")
         chat_store = ChatHistoryStore(self.root)
-        chat = chat_store.create_chat("Private chat", "Private metadata description")
+        chat = chat_store.create_chat(
+            "Private chat", "Private metadata description", priority="Critical", purpose="Development", scope="Global"
+        )
         chat_store.append_message("User", "Dedicated secret body", chat.chat_id)
 
         bundle = FlowContextBuilder(flow_store, ChatRegistry(chat_store)).build_for_message("Current Flow request")
@@ -337,6 +378,10 @@ class FlowContextAndCoreTests(unittest.TestCase):
         self.assertIn(chat.chat_id, bundle.dedicated_chat_metadata)
         self.assertIn("Private chat", bundle.dedicated_chat_metadata)
         self.assertIn("Private metadata description", bundle.dedicated_chat_metadata)
+        self.assertIn("priority: Critical", bundle.dedicated_chat_metadata)
+        self.assertIn("purpose: Development", bundle.dedicated_chat_metadata)
+        self.assertIn("scope: Global", bundle.dedicated_chat_metadata)
+        self.assertIn("descriptive in V1 only", bundle.dedicated_chat_metadata)
         self.assertNotIn("Dedicated secret body", bundle.dedicated_chat_metadata)
         self.assertIn("Do not claim to know, read, or have access", bundle.dedicated_chat_metadata)
 
@@ -376,6 +421,17 @@ class FlowContextAndCoreTests(unittest.TestCase):
         self.assertIn("Private project", prompt)
         self.assertIn("Metadata is visible.", prompt)
         self.assertNotIn("Dedicated body must not leak.", prompt)
+
+    def test_core_creates_and_edits_typed_chat_metadata(self) -> None:
+        core = AmadeusCore(llm_client=_FakeLLM(), project_root=self.root)
+        created = core.create_chat("Scoped", "Initial", priority="Important", purpose="Project", scope="Project")
+        updated = core.update_chat_metadata(
+            created.chat_id, title="Edited", description="Changed", priority="Low", purpose="Other", scope="Global"
+        )
+        self.assertEqual(
+            ("Edited", "Changed", "Low", "Other", "Global"),
+            (updated.title, updated.description, updated.priority, updated.purpose, updated.scope),
+        )
 
     def test_successful_flow_events_are_ordered_and_share_one_run(self) -> None:
         llm = _FakeLLM()

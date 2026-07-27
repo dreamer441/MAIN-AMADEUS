@@ -42,7 +42,15 @@ AMADEUS Core is the lightweight coordinator. It routes user messages to the corr
 - Flow context contains only recent Flow history and `[AVAILABLE DEDICATED CHATS]` metadata; dedicated-chat message bodies are never loaded or injected.
 - Successful Flow exchanges persist as one atomic two-message update under `data/flow_chat`; failed Flow execution leaves no partial exchange and returns a generic safe failure response.
 - Flow emits the same ordered, safe shared Process Monitor events to a live listener and the final response payload; event rows describe execution boundaries only and contain no prompt, response, or dedicated-chat body content.
-- The registry reads current dedicated-chat metadata on each Flow context build, so live dedicated-chat create, title/description update, and delete mutations are reflected without Flow owning a second index.
+- The registry reads current dedicated-chat metadata on each Flow context build, so live create, title/description/priority/purpose/scope updates, and delete mutations are reflected without Flow owning a second index.
+
+## Mind Map Routing
+
+- Core constructs and registers `MindMapModule` as `mind_map`.
+- Core exposes snapshot, CRUD, move, search, bounded-neighborhood, JSON import/export, source-upsert, and live-subscription wrappers.
+- The Mind Map GUI calls these wrappers only; Core does not implement graph storage, layout, or source-adapter policy.
+- Mind Map mutation events are real ordered operation boundaries with generic summaries and generic failed terminals that exclude graph content, labels, user errors, backend details, and hidden reasoning.
+- Mind Map subscriptions are redacted invalidation notices containing only operation/entity identifiers, graph ID, and timestamp; consumers retrieve graph details through Core snapshots.
 
 ## Important boundary
 
@@ -72,7 +80,7 @@ Core routes. It should not become a place for large feature logic. If Core start
 ## Chat Workspace V2 Integration
 
 - Core exposes current chat metadata to the GUI.
-- Core can create chats with title and description through Storage.
+- Core creates and updates validated title, description, priority, purpose, and scope chat metadata through Storage.
 - Core passes chat workspace context selected by Context Builder into the Chat module.
 - Process Monitor records when chat workspace context is injected.
 

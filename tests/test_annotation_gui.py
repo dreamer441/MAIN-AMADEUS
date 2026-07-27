@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from amadeus_gui.main.main_window import AmadeusMainWindow, ChatResponseWorker, MessageInput
 from amadeus_gui.side import RightPanelWidget
+from mindmap.models import GraphSnapshot
 
 
 class MessageInputSuggestionKeyTests(unittest.TestCase):
@@ -306,6 +307,7 @@ class FakeCommentCore:
             "message_number": 12,
             "comment_type": "selection",
         }]
+        self._mind_map_listeners = []
 
     def list_chats(self) -> list[object]:
         return []
@@ -329,6 +331,12 @@ class FakeCommentCore:
             "content": "",
             "metadata": {"comment_count": len(self.comments), "comments": self.comments},
         }
+
+    def get_mind_map_snapshot(self) -> GraphSnapshot:
+        return GraphSnapshot(graph_id="main", nodes=(), links=())
+
+    def subscribe_mind_map(self, listener) -> None:
+        self._mind_map_listeners.append(listener)
 
     def add_comment(self, comment: str, selected_text: str) -> SimpleNamespace:
         self.add_calls.append((comment, selected_text))

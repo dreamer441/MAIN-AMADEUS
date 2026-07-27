@@ -1,8 +1,6 @@
 # AMADEUS GUI Future Updates
 
 - Improve chat formatting with speaker styling.
-- Add manual chat rename.
-- Add edit dialog for existing chat title/description.
 - Add chat search and chat archive/restore.
 - Add optional chat pinning, favorites, and project labels.
 - Add collapsible Process Monitor panel.
@@ -15,7 +13,7 @@
 ## Flow Shell Follow-up
 
 - Add Flow-specific keyboard send behavior and richer transcript formatting without changing its Core-only boundary.
-- Replace Code, Mind Map, and Habit Tracker foundation pages only when their independent Core routes and module contracts are available.
+- Replace the Code and Habit Tracker foundation pages only when their independent Core routes and module contracts are available.
 - Add Flow-specific Process Monitor controls only if they preserve the existing safe shared-event boundary.
 
 ## Future GUI Panel Improvements
@@ -28,7 +26,6 @@
 
 ## Future Multi-Chat Improvements
 
-- Add rename dialog for chat titles.
 - Add chat creation with optional first instruction/profile.
 - Add AMADEUS-generated callable chat summary when switching/closing chats.
 - Add staged metadata retrieval: title first, description second, summary only when deeper context is requested.

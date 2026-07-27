@@ -8,7 +8,8 @@
 - Corruption-tolerant history loading that skips malformed local rows.
 - Layer 0 context: bounded, chronological recent Flow history.
 - Layer 1 context: current dedicated-chat registry metadata formatted separately from Flow history.
-- Metadata-only registry records with `chat_id`, title, and description; no dedicated-chat message bodies are read or exposed.
+- Metadata-only registry records with `chat_id`, title, description, priority, purpose, and scope; no dedicated-chat message bodies are read or exposed.
+- Scope is descriptive in V1 only and never causes automatic cross-chat retrieval.
 - Registry reads the live dedicated-chat list for each Flow context build, reflecting create, metadata-update, and delete mutations.
 - Shared Chat module, identity prompt builder, and safe Process Monitor lifecycle through the separate Core Flow route.
 - Live shared event delivery and final event-payload reconciliation for the GUI.

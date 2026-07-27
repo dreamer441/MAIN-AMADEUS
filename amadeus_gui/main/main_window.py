@@ -34,6 +34,7 @@ from amadeus_core import AmadeusCore
 from amadeus_gui.flow_chat_view import FlowChatView
 from amadeus_gui.module_placeholder_view import ModulePlaceholderView
 from amadeus_gui.side import RightPanelWidget
+from mindmap.gui import MindMapView
 
 
 class MessageInput(QTextEdit):
@@ -196,16 +197,24 @@ class ProjectFileAskWorker(QObject):
 
 
 class NewChatDialog(QDialog):
-    """Small creation dialog for chat workspace metadata.
+    """Create or edit a chat workspace's stored metadata.
 
-    AMADEUS chat workspaces now start with a title and optional description. The
-    description is active chat context and appears in the right-side Memory panel,
-    but it is not the same as global memory or a generated chat summary.
+    AMADEUS chat workspaces store title, description, priority, purpose, and scope.
+    Scope is descriptive V1 metadata, not cross-chat retrieval permission.
     """
 
-    def __init__(self, suggested_title: str = "New Chat", parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        suggested_title: str = "New Chat",
+        description: str = "",
+        priority: str = "Normal",
+        purpose: str = "General",
+        scope: str = "Local",
+        editing: bool = False,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Create New Chat")
+        self.setWindowTitle("Edit Chat" if editing else "Create New Chat")
         self.setMinimumWidth(420)
 
         layout = QVBoxLayout(self)
@@ -221,9 +230,23 @@ class NewChatDialog(QDialog):
         )
         self.description_input.setMinimumHeight(90)
         self.description_input.setMaximumHeight(140)
+        self.description_input.setPlainText(description)
+
+        self.priority_input = QComboBox()
+        self.priority_input.addItems(("Critical", "Important", "Normal", "Low", "Ignore"))
+        self.priority_input.setCurrentText(priority)
+        self.purpose_input = QComboBox()
+        self.purpose_input.addItems(("General", "Project", "Study", "Development", "Other"))
+        self.purpose_input.setCurrentText(purpose)
+        self.scope_input = QComboBox()
+        self.scope_input.addItems(("Local", "Project", "Global"))
+        self.scope_input.setCurrentText(scope)
 
         form.addRow("Title:", self.title_input)
         form.addRow("Description:", self.description_input)
+        form.addRow("Priority:", self.priority_input)
+        form.addRow("Purpose:", self.purpose_input)
+        form.addRow("Scope:", self.scope_input)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
@@ -239,6 +262,18 @@ class NewChatDialog(QDialog):
     def chat_description(self) -> str:
         """Return the optional description chosen by Dato."""
         return self.description_input.toPlainText().strip()
+
+    def chat_priority(self) -> str:
+        """Return the selected validated priority label."""
+        return self.priority_input.currentText()
+
+    def chat_purpose(self) -> str:
+        """Return the selected validated purpose label."""
+        return self.purpose_input.currentText()
+
+    def chat_scope(self) -> str:
+        """Return the selected descriptive V1 scope label."""
+        return self.scope_input.currentText()
 
 
 class DedicatedChatView(QWidget):
@@ -371,7 +406,7 @@ class AmadeusMainWindow(QMainWindow):
 
         self.flow_chat_view = FlowChatView(self.core)
         self.code_view = ModulePlaceholderView("Code", "A focused workspace for future coding tasks.")
-        self.mind_map_view = ModulePlaceholderView("Mind Map", "A visual space for future idea mapping.")
+        self.mind_map_view = MindMapView(self.core, refresh_on_init=False)
         self.habit_tracker_view = ModulePlaceholderView("Habit Tracker", "A future home for intentional habit tracking.")
         self.views = QStackedWidget()
         self.views.addWidget(self.flow_chat_view)
@@ -402,6 +437,8 @@ class AmadeusMainWindow(QMainWindow):
     def _select_view(self, index: int) -> None:
         """Switch persistent pages without recreating any chat or module state."""
         self.views.setCurrentIndex(index)
+        if index == 3:
+            self.mind_map_view.refresh_graph()
         for button_index, button in enumerate(self.navigation_buttons.values()):
             button.setChecked(button_index == index)
 
@@ -429,6 +466,9 @@ class AmadeusMainWindow(QMainWindow):
         self.new_chat_button = QPushButton("New Chat")
         self.new_chat_button.clicked.connect(self._create_new_chat)
 
+        self.edit_chat_button = QPushButton("Edit Chat")
+        self.edit_chat_button.clicked.connect(self._edit_current_chat)
+
         self.delete_chat_button = QPushButton("Delete Chat")
         self.delete_chat_button.clicked.connect(self._delete_current_chat)
 
@@ -438,6 +478,7 @@ class AmadeusMainWindow(QMainWindow):
         controls.addWidget(label)
         controls.addWidget(self.chat_selector)
         controls.addWidget(self.new_chat_button)
+        controls.addWidget(self.edit_chat_button)
         controls.addWidget(self.delete_chat_button)
         controls.addWidget(self.add_comment_button)
         controls.addStretch()
@@ -752,7 +793,7 @@ class AmadeusMainWindow(QMainWindow):
             self.status_label.setText(f"Could not switch chat: {error}")
 
     def _create_new_chat(self) -> None:
-        """Create a new chat workspace with title and optional description."""
+        """Create a new chat workspace with editable typed metadata."""
         if not hasattr(self.core, "create_chat"):
             return
 
@@ -761,7 +802,13 @@ class AmadeusMainWindow(QMainWindow):
             return
 
         try:
-            self.core.create_chat(title=dialog.chat_title(), description=dialog.chat_description())
+            self.core.create_chat(
+                title=dialog.chat_title(),
+                description=dialog.chat_description(),
+                priority=dialog.chat_priority(),
+                purpose=dialog.chat_purpose(),
+                scope=dialog.chat_scope(),
+            )
             self._refresh_chat_selector()
             self._load_existing_chat_history()
             self._reset_right_panel_for_chat_switch()
@@ -771,6 +818,44 @@ class AmadeusMainWindow(QMainWindow):
             self.status_label.setText("Created new chat workspace.")
         except Exception as error:
             self.status_label.setText(f"Could not create chat: {error}")
+
+    def _edit_current_chat(self) -> None:
+        """Edit active chat metadata without loading or changing its history."""
+        if not hasattr(self.core, "get_current_chat_metadata") or not hasattr(self.core, "update_chat_metadata"):
+            return
+
+        try:
+            metadata = self.core.get_current_chat_metadata()
+        except Exception as error:
+            self.status_label.setText(f"Could not load chat metadata: {error}")
+            return
+
+        dialog = NewChatDialog(
+            suggested_title=getattr(metadata, "title", "New Chat"),
+            description=getattr(metadata, "description", ""),
+            priority=getattr(metadata, "priority", "Normal"),
+            purpose=getattr(metadata, "purpose", "General"),
+            scope=getattr(metadata, "scope", "Local"),
+            editing=True,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        try:
+            self.core.update_chat_metadata(
+                getattr(metadata, "chat_id", self.core.get_current_chat_id()),
+                title=dialog.chat_title(),
+                description=dialog.chat_description(),
+                priority=dialog.chat_priority(),
+                purpose=dialog.chat_purpose(),
+                scope=dialog.chat_scope(),
+            )
+            self._refresh_chat_selector()
+            self._render_current_chat_context_in_memory_panel()
+            self.status_label.setText("Updated chat workspace metadata.")
+        except Exception as error:
+            self.status_label.setText(f"Could not update chat: {error}")
 
     def _delete_current_chat(self) -> None:
         """Delete the currently selected chat after a confirmation prompt."""
@@ -979,7 +1064,13 @@ class AmadeusMainWindow(QMainWindow):
             return
 
         try:
-            self.core.create_chat(title=dialog.chat_title(), description=dialog.chat_description())
+            self.core.create_chat(
+                title=dialog.chat_title(),
+                description=dialog.chat_description(),
+                priority=dialog.chat_priority(),
+                purpose=dialog.chat_purpose(),
+                scope=dialog.chat_scope(),
+            )
             self.core.save_side_ask_to_chat(question, answer, selected)
             self._refresh_chat_selector()
             self._load_existing_chat_history()
@@ -1098,6 +1189,7 @@ class AmadeusMainWindow(QMainWindow):
         self.annotation_suggestion_box.setDisabled(waiting)
         self.chat_selector.setDisabled(waiting)
         self.new_chat_button.setDisabled(waiting)
+        self.edit_chat_button.setDisabled(waiting)
         self.delete_chat_button.setDisabled(waiting)
         self.add_comment_button.setDisabled(waiting)
         self.status_label.setText("AMADEUS is thinking..." if waiting else "Ready")
@@ -1125,7 +1217,7 @@ class AmadeusMainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt uses camelCase names.
         """Prevent closing while a background chat request is still running."""
-        if self._active_threads or self.flow_chat_view.has_active_workers():
+        if self._active_threads or self.flow_chat_view.has_active_workers() or self.mind_map_view.has_active_workers():
             self.status_label.setText("AMADEUS is still thinking. Wait for the response before closing.")
             event.ignore()
             return
@@ -1162,11 +1254,17 @@ class AmadeusMainWindow(QMainWindow):
         title = getattr(metadata, "title", "Untitled Chat")
         description = getattr(metadata, "description", "") or "No description yet."
         summary = getattr(metadata, "summary", "") or "No callable summary yet."
+        priority = getattr(metadata, "priority", "Normal")
+        purpose = getattr(metadata, "purpose", "General")
+        scope = getattr(metadata, "scope", "Local")
 
         return (
             "Current Chat Context\n"
             f"Title: {title}\n"
             f"Description: {description}\n"
+            f"Priority: {priority}\n"
+            f"Purpose: {purpose}\n"
+            f"Scope: {scope} (descriptive only in V1)\n"
             f"Callable Summary: {summary}"
         )
 

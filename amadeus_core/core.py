@@ -25,11 +25,12 @@ from flow_chat import FlowChatService, FlowChatStore, FlowContextBuilder
 from llm_client import OllamaClient
 from materials_module import MaterialsService
 from memory_module import MemoryService
+from mindmap import MindMapModule
 from comments_module import CommentService
 from side_ask_module import SideAskService
 from project_file_reader import ProjectFileContent, ProjectFileReader
 from sheets_module import SheetService
-from storage import ChatHistoryMessage, ChatHistoryStore, ChatMetadata
+from storage import ChatHistoryMessage, ChatHistoryStore, ChatMetadata, ChatPriority, ChatPurpose, ChatScope
 
 
 class AmadeusCore:
@@ -89,6 +90,10 @@ class AmadeusCore:
         # Comments are lightweight notes attached to selected chat text. They are
         # deliberately separate from reward/importance/memory until those systems are designed.
         self.comment_service = CommentService(self.project_root)
+
+        # Mind Map owns local graph persistence and validation. Core exposes its
+        # facade so GUI and future source adapters never access SQLite directly.
+        self.mind_map_module = MindMapModule(self.project_root)
 
         # Context Builder decides which history/project/memory context enters the prompt.
         self.context_builder = ChatContextBuilder(
@@ -160,6 +165,7 @@ class AmadeusCore:
         self.module_registry.register("exports", self.export_service)
         self.module_registry.register("side_ask", self.side_ask_service)
         self.module_registry.register("comments", self.comment_service)
+        self.module_registry.register("mind_map", self.mind_map_module)
         self.module_registry.register("context_builder", self.context_builder)
 
     def _register_annotations(self) -> None:
@@ -421,6 +427,72 @@ class AmadeusCore:
     def load_flow_history(self) -> list[Any]:
         """Return persisted Flow messages for the GUI without exposing Flow storage."""
         return self.flow_chat_store.load_messages()
+
+    def subscribe_mind_map(self, listener: Callable[[dict[str, Any]], None]) -> None:
+        """Subscribe a GUI or adapter to completed graph changes through Core."""
+        if not callable(listener):
+            raise ValueError("listener must be callable")
+
+        def publish_safe_event(event: dict[str, Any]) -> None:
+            listener({
+                key: event[key]
+                for key in ("event_type", "entity_type", "entity_id", "graph_id", "created_at")
+                if key in event
+            })
+
+        self.mind_map_module.subscribe(publish_safe_event)
+
+    def get_mind_map_snapshot(self) -> Any:
+        """Return the active graph snapshot for a Core-mediated view refresh."""
+        return self.mind_map_module.get_snapshot()
+
+    def create_mind_map_node(self, **fields: Any) -> Any:
+        """Create one validated graph node through the Mind Map module."""
+        return self.mind_map_module.create_node(**fields)
+
+    def update_mind_map_node(self, node_id: str, **changes: Any) -> Any:
+        """Update one graph node through the Mind Map module."""
+        return self.mind_map_module.update_node(node_id, **changes)
+
+    def move_mind_map_node(self, node_id: str, position_x: float, position_y: float, **fields: Any) -> Any:
+        """Persist a graph node position without exposing graph storage to the GUI."""
+        return self.mind_map_module.move_node(node_id, position_x, position_y, **fields)
+
+    def delete_mind_map_node(self, node_id: str, **fields: Any) -> None:
+        """Delete one node and its connected links through the Mind Map module."""
+        self.mind_map_module.delete_node(node_id, **fields)
+
+    def create_mind_map_link(self, **fields: Any) -> Any:
+        """Create one validated graph relationship through the Mind Map module."""
+        return self.mind_map_module.create_link(**fields)
+
+    def update_mind_map_link(self, link_id: str, **changes: Any) -> Any:
+        """Update one graph relationship through the Mind Map module."""
+        return self.mind_map_module.update_link(link_id, **changes)
+
+    def delete_mind_map_link(self, link_id: str, **fields: Any) -> None:
+        """Delete one graph relationship through the Mind Map module."""
+        self.mind_map_module.delete_link(link_id, **fields)
+
+    def search_mind_map_nodes(self, query: str, limit: int = 50) -> list[Any]:
+        """Search graph nodes through the module's validated retrieval API."""
+        return self.mind_map_module.search_nodes(query, limit=limit)
+
+    def get_mind_map_neighborhood(self, root_node_id: str, depth: int = 1) -> Any:
+        """Return a bounded graph neighborhood through the Mind Map module."""
+        return self.mind_map_module.get_neighborhood(root_node_id, depth=depth)
+
+    def upsert_mind_map_source_node(self, **fields: Any) -> Any:
+        """Create or refresh a graph node for a future AMADEUS source adapter."""
+        return self.mind_map_module.upsert_source_node(**fields)
+
+    def export_mind_map(self, destination: Path | str) -> Path:
+        """Export the active graph as portable JSON through the Mind Map module."""
+        return self.mind_map_module.export_to_json(destination)
+
+    def import_mind_map(self, source: Path | str, *, replace_graph: bool = False) -> Any:
+        """Import portable graph JSON through the Mind Map module."""
+        return self.mind_map_module.import_from_json(source, replace_graph=replace_graph)
 
 
     def _handle_sheet_prompt_request(
@@ -867,9 +939,18 @@ class AmadeusCore:
         """Return metadata for the active chat workspace."""
         return self.chat_history_store.get_current_chat()
 
-    def create_chat(self, title: str | None = None, description: str | None = None) -> ChatMetadata:
+    def create_chat(
+        self,
+        title: str | None = None,
+        description: str | None = None,
+        priority: ChatPriority = "Normal",
+        purpose: ChatPurpose = "General",
+        scope: ChatScope = "Local",
+    ) -> ChatMetadata:
         """Create a new chat and make it active."""
-        return self.chat_history_store.create_chat(title=title, description=description)
+        return self.chat_history_store.create_chat(
+            title=title, description=description, priority=priority, purpose=purpose, scope=scope
+        )
 
     def update_chat_metadata(
         self,
@@ -877,13 +958,19 @@ class AmadeusCore:
         title: str | None = None,
         description: str | None = None,
         summary: str | None = None,
+        priority: ChatPriority | None = None,
+        purpose: ChatPurpose | None = None,
+        scope: ChatScope | None = None,
     ) -> ChatMetadata:
-        """Update title/description/summary metadata for one chat."""
+        """Update editable title, description, summary, priority, purpose, and scope metadata."""
         return self.chat_history_store.update_chat_metadata(
             chat_id=chat_id,
             title=title,
             description=description,
             summary=summary,
+            priority=priority,
+            purpose=purpose,
+            scope=scope,
         )
 
     def delete_chat(self, chat_id: str | None = None) -> ChatMetadata:

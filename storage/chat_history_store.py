@@ -18,7 +18,16 @@ import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+
+
+ChatPriority = Literal["Critical", "Important", "Normal", "Low", "Ignore"]
+ChatPurpose = Literal["General", "Project", "Study", "Development", "Other"]
+ChatScope = Literal["Local", "Project", "Global"]
+
+CHAT_PRIORITIES = frozenset(("Critical", "Important", "Normal", "Low", "Ignore"))
+CHAT_PURPOSES = frozenset(("General", "Project", "Study", "Development", "Other"))
+CHAT_SCOPES = frozenset(("Local", "Project", "Global"))
 
 
 @dataclass(frozen=True)
@@ -51,6 +60,9 @@ class ChatMetadata:
     updated_at: str
     description: str = ""
     summary: str = ""
+    priority: ChatPriority = "Normal"
+    purpose: ChatPurpose = "General"
+    scope: ChatScope = "Local"
 
 
 class ChatHistoryStore:
@@ -126,7 +138,14 @@ class ChatHistoryStore:
                 return chat
         return None
 
-    def create_chat(self, title: str | None = None, description: str | None = None) -> ChatMetadata:
+    def create_chat(
+        self,
+        title: str | None = None,
+        description: str | None = None,
+        priority: ChatPriority = "Normal",
+        purpose: ChatPurpose = "General",
+        scope: ChatScope = "Local",
+    ) -> ChatMetadata:
         """Create a new empty chat and make it the active chat.
 
         The description is the first version of chat-level workspace context. It
@@ -137,6 +156,9 @@ class ChatHistoryStore:
         chat_id = self._new_chat_id()
         clean_title = (title or self._default_new_chat_title()).strip() or "New Chat"
         clean_description = (description or "").strip()
+        clean_priority = self._validate_choice("priority", priority, CHAT_PRIORITIES)
+        clean_purpose = self._validate_choice("purpose", purpose, CHAT_PURPOSES)
+        clean_scope = self._validate_choice("scope", scope, CHAT_SCOPES)
         metadata = ChatMetadata(
             chat_id=chat_id,
             title=clean_title,
@@ -144,6 +166,9 @@ class ChatHistoryStore:
             updated_at=now,
             description=clean_description,
             summary="",
+            priority=clean_priority,  # type: ignore[arg-type]
+            purpose=clean_purpose,  # type: ignore[arg-type]
+            scope=clean_scope,  # type: ignore[arg-type]
         )
 
         index = self._read_index()
@@ -163,6 +188,9 @@ class ChatHistoryStore:
         title: str | None = None,
         description: str | None = None,
         summary: str | None = None,
+        priority: ChatPriority | None = None,
+        purpose: ChatPurpose | None = None,
+        scope: ChatScope | None = None,
     ) -> ChatMetadata:
         """Update editable chat metadata fields.
 
@@ -178,6 +206,9 @@ class ChatHistoryStore:
             title=(title if title is not None else existing.title).strip() or existing.title,
             description=(description if description is not None else existing.description).strip(),
             summary=(summary if summary is not None else existing.summary).strip(),
+            priority=self._validate_choice("priority", priority, CHAT_PRIORITIES) if priority is not None else existing.priority,  # type: ignore[arg-type]
+            purpose=self._validate_choice("purpose", purpose, CHAT_PURPOSES) if purpose is not None else existing.purpose,  # type: ignore[arg-type]
+            scope=self._validate_choice("scope", scope, CHAT_SCOPES) if scope is not None else existing.scope,  # type: ignore[arg-type]
             created_at=existing.created_at,
             updated_at=self._now(),
         )
@@ -309,8 +340,8 @@ class ChatHistoryStore:
     def _metadata_from_raw(self, raw_chat: Any) -> ChatMetadata | None:
         """Parse one index row into safe metadata.
 
-        The parser accepts older metadata rows that do not yet have description or
-        summary fields. This keeps patch updates from breaking existing chats.
+        The parser accepts older metadata rows that do not yet have workspace
+        fields. Missing or invalid typed choices safely use V2 defaults.
         """
         if not isinstance(raw_chat, dict):
             return None
@@ -322,6 +353,9 @@ class ChatHistoryStore:
             return None
         description = raw_chat.get("description") if isinstance(raw_chat.get("description"), str) else ""
         summary = raw_chat.get("summary") if isinstance(raw_chat.get("summary"), str) else ""
+        priority = raw_chat.get("priority") if raw_chat.get("priority") in CHAT_PRIORITIES else "Normal"
+        purpose = raw_chat.get("purpose") if raw_chat.get("purpose") in CHAT_PURPOSES else "General"
+        scope = raw_chat.get("scope") if raw_chat.get("scope") in CHAT_SCOPES else "Local"
         return ChatMetadata(
             chat_id=chat_id,
             title=title,
@@ -329,6 +363,9 @@ class ChatHistoryStore:
             updated_at=updated_at,
             description=description,
             summary=summary,
+            priority=priority,  # type: ignore[arg-type]
+            purpose=purpose,  # type: ignore[arg-type]
+            scope=scope,  # type: ignore[arg-type]
         )
 
     def _metadata_to_raw(self, metadata: ChatMetadata) -> dict[str, str]:
@@ -338,6 +375,9 @@ class ChatHistoryStore:
             "title": metadata.title,
             "description": metadata.description,
             "summary": metadata.summary,
+            "priority": metadata.priority,
+            "purpose": metadata.purpose,
+            "scope": metadata.scope,
             "created_at": metadata.created_at,
             "updated_at": metadata.updated_at,
         }
@@ -396,6 +436,13 @@ class ChatHistoryStore:
     def _default_new_chat_title(self) -> str:
         """Return a simple human title for a newly created chat."""
         return f"New Chat {len(self.list_chats()) + 1}"
+
+    def _validate_choice(self, field_name: str, value: str, allowed_values: frozenset[str]) -> str:
+        """Return a supported metadata value or reject invalid caller input."""
+        if value not in allowed_values:
+            choices = ", ".join(sorted(allowed_values))
+            raise ValueError(f"Invalid {field_name}: {value!r}. Expected one of: {choices}.")
+        return value
 
     def _now(self) -> str:
         """Return one timestamp format for all chat metadata and messages."""

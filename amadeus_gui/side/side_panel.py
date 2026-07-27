@@ -915,7 +915,7 @@ class RightPanelWidget(QTabWidget):
         """Show current chat title/description in the Memory tab by default."""
         self.state.set_chat_context(chat_context_text)
         self.memory_panel_title.setText("Current Chat Context")
-        self.memory_panel_meta.setText("Chat title/description are active context for this chat.")
+        self.memory_panel_meta.setText("Chat metadata is active context for this chat; scope is descriptive in V1.")
         self.memory_panel.setPlainText(chat_context_text)
         self.memory_panel.moveCursor(QTextCursor.MoveOperation.Start)
 
