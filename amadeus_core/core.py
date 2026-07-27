@@ -228,7 +228,6 @@ class AmadeusCore:
                     f"Detected annotation: [{parsed_annotation.annotation_name}].",
                     level="success",
                 )
-
                 # `[sheet][... ] prompt` is a hybrid route: the annotation selects an exact
                 # sheet from local storage, then Core sends the remaining prompt to normal chat
                 # with that sheet as callable context. This keeps sheets deterministic without
@@ -241,6 +240,13 @@ class AmadeusCore:
                 # then Chat answers using only that selected export segment as extra context.
                 if parsed_annotation.annotation_name == "export" and parsed_annotation.content.strip():
                     return self.callable_context_router.handle_export_prompt_request(parsed_annotation, clean_message, trace_logger)
+
+                trace_logger.add_plan(
+                    source_module="core",
+                    title="Annotation Work Plan",
+                    summary="Declared route: resolve the requested annotation, return its deterministic result, then store the completed exchange.",
+                    route_intent="annotation_resolve_persist",
+                )
 
                 trace_logger.add_event(
                     "routing",
@@ -257,6 +263,18 @@ class AmadeusCore:
                 # payload so exact code can appear in Code Viewer instead of polluting chat.
                 annotation_output = self.annotation_registry.handle(parsed_annotation, self.annotation_context)
                 response, side_panel = self._unpack_annotation_output(annotation_output)
+
+                if (
+                    parsed_annotation.annotation_name == "export"
+                    and side_panel is not None
+                    and side_panel.get("metadata", {}).get("persisted_during_request") is True
+                ):
+                    trace_logger.add_event(
+                        "module",
+                        "Export Saved",
+                        "Export files were saved for the requested context.",
+                        level="success",
+                    )
 
                 if side_panel is not None:
                     trace_logger.add_event(
@@ -282,7 +300,7 @@ class AmadeusCore:
                         level="success",
                     )
 
-                self._persist_exchange(clean_message, response)
+                self._persist_completed_exchange(clean_message, response, trace_logger)
                 trace_logger.add_event(
                     "output",
                     "Output Ready",
@@ -298,6 +316,12 @@ class AmadeusCore:
                 "routing",
                 "Request Route",
                 "Normal chat route selected.",
+            )
+            trace_logger.add_plan(
+                source_module="core",
+                title="Normal Chat Work Plan",
+                summary="Declared route: build eligible context, prepare an answer through the configured LLM, then store the completed exchange.",
+                route_intent="normal_chat_context_llm_persist",
             )
 
             chat_module = self.module_registry.get("chat")
@@ -330,7 +354,7 @@ class AmadeusCore:
                 identity_prompt=identity_prompt,
                 trace_logger=trace_logger,
             )
-            self._persist_exchange(clean_message, response)
+            self._persist_completed_exchange(clean_message, response, trace_logger)
             if trace_logger.has_failed_event():
                 trace_logger.fail_run(
                     title="Request Failed",
@@ -350,7 +374,7 @@ class AmadeusCore:
                 title="Request Failed",
                 summary="The request could not be completed.",
             )
-            response = f"AMADEUS error: {error}"
+            response = "AMADEUS could not complete that request. Please try again."
             return self._build_response_payload(response, trace_logger)
 
 
@@ -373,6 +397,12 @@ class AmadeusCore:
             return self._build_response_payload(response, trace_logger)
 
         try:
+            trace_logger.add_plan(
+                source_module="core",
+                title="Flow Chat Work Plan",
+                summary="Declared route: load eligible Flow context, prepare an answer through the configured LLM, then store the completed Flow exchange.",
+                route_intent="flow_context_llm_persist",
+            )
             execution = self.flow_chat_service.handle_message(clean_message, trace_logger)
             if not execution.succeeded:
                 trace_logger.fail_run(title="Flow Request Failed", summary="The Flow request could not be completed.")
@@ -412,11 +442,11 @@ class AmadeusCore:
             trace_logger.add_event(
                 "module",
                 "Sheet Module",
-                f"Could not resolve requested sheet: {problem}",
+                "Could not resolve the requested sheet.",
                 level="warning",
             )
             response = f"Could not use sheet context. {problem}"
-            self._persist_exchange(original_message, response)
+            self._persist_completed_exchange(original_message, response, trace_logger)
             trace_logger.add_event("output", "Output Ready", "Sheet resolution error returned to GUI.", level="warning")
             return self._build_response_payload(
                 response,
@@ -426,7 +456,7 @@ class AmadeusCore:
 
         if sheet is None:
             response = "No specific sheet was selected for injection. Choose a sheet like `[sheet][chat][Sheet Title] your question`."
-            self._persist_exchange(original_message, response)
+            self._persist_completed_exchange(original_message, response, trace_logger)
             trace_logger.add_event("output", "Output Ready", "Sheet usage help returned to GUI.", level="warning")
             return self._build_response_payload(
                 response,
@@ -442,7 +472,7 @@ class AmadeusCore:
         trace_logger.add_event(
             "module",
             "Sheet Module",
-            f"Loaded sheet `{sheet.title}` as callable context for this request only.",
+            "Loaded the selected sheet as callable context for this request only.",
             level="success",
         )
 
@@ -469,7 +499,7 @@ class AmadeusCore:
             identity_prompt=identity_prompt,
             trace_logger=trace_logger,
         )
-        self._persist_exchange(original_message, response)
+        self._persist_completed_exchange(original_message, response, trace_logger)
         trace_logger.add_event("output", "Output Ready", "Response returned to GUI with sheet context.", level="success")
         return self._build_response_payload(
             response,
@@ -501,11 +531,11 @@ class AmadeusCore:
             trace_logger.add_event(
                 "module",
                 "Export Module",
-                f"Could not parse export annotation target: {parse_problem}",
+                "Could not parse the export request.",
                 level="warning",
             )
             response = f"Could not use export context. {parse_problem}"
-            self._persist_exchange(original_message, response)
+            self._persist_completed_exchange(original_message, response, trace_logger)
             return self._build_response_payload(
                 response,
                 trace_logger,
@@ -514,7 +544,7 @@ class AmadeusCore:
 
         if target.mode in {"help", "list"}:
             response = "Export context needs a chat title and optional message range, for example `[export][use][Chat Title][4-6] your question`."
-            self._persist_exchange(original_message, response)
+            self._persist_completed_exchange(original_message, response, trace_logger)
             return self._build_response_payload(
                 response,
                 trace_logger,
@@ -526,11 +556,11 @@ class AmadeusCore:
             trace_logger.add_event(
                 "module",
                 "Export Module",
-                f"Could not resolve requested export context: {problem}",
+                "Could not resolve the requested export context.",
                 level="warning",
             )
             response = f"Could not use export context. {problem}"
-            self._persist_exchange(original_message, response)
+            self._persist_completed_exchange(original_message, response, trace_logger)
             return self._build_response_payload(
                 response,
                 trace_logger,
@@ -542,10 +572,17 @@ class AmadeusCore:
             "Routing Decision",
             "Export annotation with prompt detected. Routing to chat with callable export context.",
         )
+        if getattr(selection, "persisted_during_request", False):
+            trace_logger.add_event(
+                "module",
+                "Export Saved",
+                "Export files were saved for the requested context.",
+                level="success",
+            )
         trace_logger.add_event(
             "module",
             "Export Module",
-            f"Loaded export `{selection.record.chat_title}` range `{selection.range_label}` as callable context.",
+            "Loaded the selected export segment as callable context.",
             level="success",
         )
 
@@ -579,7 +616,7 @@ class AmadeusCore:
             identity_prompt=identity_prompt,
             trace_logger=trace_logger,
         )
-        self._persist_exchange(original_message, response)
+        self._persist_completed_exchange(original_message, response, trace_logger)
         trace_logger.add_event("output", "Output Ready", "Response returned to GUI with export context.", level="success")
         return self._build_response_payload(
             response,
@@ -618,6 +655,12 @@ class AmadeusCore:
             "Routing Decision",
             "Routing to Side Ask flow. The answer will not be saved unless Dato explicitly saves it.",
         )
+        trace_logger.add_plan(
+            source_module="core",
+            title="Side Ask Work Plan",
+            summary="Declared route: load eligible context and prepare an answer through the configured LLM without storing an exchange.",
+            route_intent="side_ask_context_llm_no_persist",
+        )
         if clean_selected:
             trace_logger.add_event(
                 "input",
@@ -626,7 +669,7 @@ class AmadeusCore:
                 level="success",
             )
 
-        context_bundle = self.context_builder.build_for_message(clean_question)
+        context_bundle = self.context_builder.build_for_message(clean_question, trace_logger=trace_logger)
         identity_prompt = self.identity_prompt_builder.build_for_chat(
             project_context_active=context_bundle.project_context_active,
         )
@@ -753,7 +796,13 @@ class AmadeusCore:
 
         if not parsed_message.normal_prompt:
             response = "\n\n---\n\n".join(responses)
-            self._persist_exchange(original_message, response)
+            trace_logger.add_plan(
+                source_module="core",
+                title="Annotation Block Work Plan",
+                summary="Declared route: resolve annotation blocks in source order and store the completed exchange.",
+                route_intent="annotation_blocks_resolve_persist",
+            )
+            self._persist_completed_exchange(original_message, response, trace_logger)
             trace_logger.add_event("output", "Output Ready", "Annotation block results returned without a chat prompt.", level="success")
             return self._build_response_payload(response, trace_logger, side_panel=side_panel)
 
@@ -765,11 +814,17 @@ class AmadeusCore:
 
         normal_prompt = parsed_message.normal_prompt
         callable_context = "Deterministic annotation results:\n\n" + "\n\n---\n\n".join(responses)
-        context_bundle = self.context_builder.build_for_message(normal_prompt)
+        context_bundle = self.context_builder.build_for_message(normal_prompt, trace_logger=trace_logger)
         trace_logger.add_event(
             "routing",
             "Routing Decision",
             "Annotation blocks resolved. Routing only outside-block text to chat with deterministic callable context.",
+        )
+        trace_logger.add_plan(
+            source_module="core",
+            title="Annotation Context Work Plan",
+            summary="Declared route: use resolved annotation results as callable context, prepare an answer through the configured LLM, then store the completed exchange.",
+            route_intent="annotation_context_llm_persist",
         )
         response = chat_module.handle_message(  # type: ignore[attr-defined]
             normal_prompt,
@@ -783,7 +838,7 @@ class AmadeusCore:
             ),
             trace_logger=trace_logger,
         )
-        self._persist_exchange(original_message, response)
+        self._persist_completed_exchange(original_message, response, trace_logger)
         trace_logger.add_event("output", "Output Ready", "Response returned with annotation block context.", level="success")
         return self._build_response_payload(response, trace_logger, side_panel=side_panel)
 
@@ -923,9 +978,18 @@ class AmadeusCore:
         """Remove one explicitly selected Materials record where supported."""
         self.materials_service.remove_material(material_id)
 
-    def handle_material_message(self, material_id: str, message: str) -> dict[str, Any]:
+    def handle_material_message(
+        self,
+        material_id: str,
+        message: str,
+        event_listener: Callable[[dict[str, object]], None] | None = None,
+    ) -> dict[str, Any]:
         """Use one selected material as callable context for this one chat request."""
-        return self.handle_user_message(message, callable_context=self.materials_service.build_callable_context(material_id))
+        return self.handle_user_message(
+            message,
+            callable_context=self.materials_service.build_callable_context(material_id),
+            event_listener=event_listener,
+        )
 
     def _persist_exchange(self, user_message: str, response: str) -> None:
         """Persist the current user/AMADEUS exchange for later resume."""
@@ -933,6 +997,11 @@ class AmadeusCore:
         # requests from becoming permanent conversation context if a route crashes early.
         self.chat_history_store.append_message("User", user_message)
         self.chat_history_store.append_message("AMADEUS", response)
+
+    def _persist_completed_exchange(self, user_message: str, response: str, trace_logger: TraceLogger) -> None:
+        """Save an exchange, then report storage only after both records are written."""
+        self._persist_exchange(user_message, response)
+        trace_logger.add_event("module", "Completed Exchange Stored", "Stored the completed exchange in the active chat.", level="success")
 
     def _build_response_payload(
         self,
@@ -942,6 +1011,7 @@ class AmadeusCore:
     ) -> dict[str, Any]:
         """Send both chat output and real execution trace back to the GUI."""
         # The GUI uses text fields today, but trace_events is already structured for future filters/export.
+        trace_logger.finalize_if_active(title="Response Returned", summary="Response returned to GUI.")
         return {
             "response": response,
             "trace": trace_logger.get_trace_text(mode="compact"),

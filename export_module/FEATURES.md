@@ -9,6 +9,7 @@
 - Labels selected ranges as **real exported chat text**, not metadata.
 - Provides a strict prompt-context contract for exported ranges so AMADEUS should not answer from the wrong/current chat.
 - Exposes known export records to Materials and supports deliberate removal through Materials' public route.
+- Emits a safe Process Monitor event after an export is successfully written, without including export titles or content.
 
 ## Phase 6: Export Display Polish
 

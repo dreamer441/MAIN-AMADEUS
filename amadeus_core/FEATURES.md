@@ -30,8 +30,9 @@ AMADEUS Core is the lightweight coordinator. It routes user messages to the corr
 
 ## Shared Process Events
 
-- Normal active-chat events are one ordered lifecycle: request receipt, route, Context Builder start/ready, LLM request/response, and Core terminal result.
+- Normal active-chat events are one ordered lifecycle: request receipt, declared route work plan, actual Context Builder source loads, configured-LLM response composition, completed-exchange storage, and Core terminal result.
 - Core records only its own request-routing and terminal boundaries; it does not expose prompt or selected context values in trace metadata.
+- Side Ask and annotation/callable-context routes declare their observable intent and retain their own no-persist or completed-persistence boundary.
 - A failed Chat event or missing Chat registration produces `Request Failed` while preserving the established user-facing error response.
 
 ## Flow Chat Routing

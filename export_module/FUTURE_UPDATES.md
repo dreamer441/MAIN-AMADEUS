@@ -11,3 +11,4 @@
 - [ ] Allow exporting selected message ranges directly.
 - [ ] Add clickable range picker in Materials panel.
 - [ ] Let Mind Map nodes link to exported chat ranges as evidence/source references.
+- [ ] Add export-specific validation progress without exposing export content in Process Monitor.

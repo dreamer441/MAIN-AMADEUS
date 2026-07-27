@@ -21,6 +21,11 @@ class ProcessEventEmitter:
         """Return an immutable snapshot of the active run's recorded events."""
         return tuple(self._events)
 
+    @property
+    def is_terminal(self) -> bool:
+        """Return whether the current run has emitted its final event."""
+        return self._is_terminal
+
     def start_run(
         self,
         *,

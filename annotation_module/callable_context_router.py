@@ -48,7 +48,7 @@ class CallableContextRouter:
         chat_id = self._current_chat_id_provider()
         sheet, problem, scope = self._sheet_service.resolve_annotation_target(annotation, chat_id)
         if problem is not None:
-            trace_logger.add_event("module", "Sheet Module", f"Could not resolve requested sheet: {problem}", level="warning")
+            trace_logger.add_event("module", "Sheet Module", "Could not resolve the requested sheet.", level="warning")
             return self._sheet_error(original_message, f"Could not use sheet context. {problem}", trace_logger, chat_id, scope)
 
         if sheet is None:
@@ -61,13 +61,19 @@ class CallableContextRouter:
             )
 
         trace_logger.add_event("routing", "Routing Decision", "Sheet annotation with prompt detected. Routing to chat with callable sheet context.")
-        trace_logger.add_event("module", "Sheet Module", f"Loaded sheet `{sheet.title}` as callable context for this request only.", level="success")
+        trace_logger.add_event("module", "Sheet Module", "Loaded the selected sheet as callable context for this request only.", level="success")
+        trace_logger.add_plan(
+            source_module="annotation_module",
+            title="Sheet Context Work Plan",
+            summary="Declared route: use the selected sheet as callable context, prepare an answer through the configured LLM, then store the completed exchange.",
+            route_intent="sheet_context_llm_persist",
+        )
         chat_module = self._chat_module_provider()
         if chat_module is None:
             return self._routing_error(trace_logger)
 
         user_prompt = annotation.content.strip()
-        context_bundle = self._context_builder.build_for_message(user_prompt)
+        context_bundle = self._context_builder.build_for_message(user_prompt, trace_logger=trace_logger)
         response = chat_module.handle_message(
             user_prompt,
             recent_conversation=context_bundle.recent_conversation,
@@ -80,7 +86,7 @@ class CallableContextRouter:
             ),
             trace_logger=trace_logger,
         )
-        self._persist_exchange(original_message, response)
+        self._persist_completed_exchange(original_message, response, trace_logger)
         trace_logger.add_event("output", "Output Ready", "Response returned to GUI with sheet context.", level="success")
         return self._build_response(
             response,
@@ -102,7 +108,7 @@ class CallableContextRouter:
         """Answer a prompt with an exact exported-chat segment as callable context."""
         target, parse_problem = self._export_service.parse_annotation_target(annotation.arguments)
         if parse_problem is not None or target is None:
-            trace_logger.add_event("module", "Export Module", f"Could not parse export annotation target: {parse_problem}", level="warning")
+            trace_logger.add_event("module", "Export Module", "Could not parse the export request.", level="warning")
             return self._export_error(original_message, f"Could not use export context. {parse_problem}", trace_logger)
 
         if target.mode in {"help", "list"}:
@@ -114,17 +120,25 @@ class CallableContextRouter:
 
         selection, problem = self._export_service.resolve_selection(target.title_or_id, target.range_token)
         if problem is not None or selection is None:
-            trace_logger.add_event("module", "Export Module", f"Could not resolve requested export context: {problem}", level="warning")
+            trace_logger.add_event("module", "Export Module", "Could not resolve the requested export context.", level="warning")
             return self._export_error(original_message, f"Could not use export context. {problem}", trace_logger)
 
         trace_logger.add_event("routing", "Routing Decision", "Export annotation with prompt detected. Routing to chat with callable export context.")
-        trace_logger.add_event("module", "Export Module", f"Loaded export `{selection.record.chat_title}` range `{selection.range_label}` as callable context.", level="success")
+        if getattr(selection, "persisted_during_request", False):
+            trace_logger.add_event("module", "Export Saved", "Export files were saved for the requested context.", level="success")
+        trace_logger.add_event("module", "Export Module", "Loaded the selected export segment as callable context.", level="success")
+        trace_logger.add_plan(
+            source_module="annotation_module",
+            title="Export Context Work Plan",
+            summary="Declared route: use the selected export segment as callable context, prepare an answer through the configured LLM, then store the completed exchange.",
+            route_intent="export_context_llm_persist",
+        )
         chat_module = self._chat_module_provider()
         if chat_module is None:
             return self._routing_error(trace_logger)
 
         user_prompt = annotation.content.strip()
-        context_bundle = self._context_builder.build_for_message(user_prompt)
+        context_bundle = self._context_builder.build_for_message(user_prompt, trace_logger=trace_logger)
         trace_logger.add_event(
             "system",
             "Export Scope Lock",
@@ -141,7 +155,7 @@ class CallableContextRouter:
             identity_prompt=self._identity_prompt_builder.build_for_chat(project_context_active=False),
             trace_logger=trace_logger,
         )
-        self._persist_exchange(original_message, response)
+        self._persist_completed_exchange(original_message, response, trace_logger)
         trace_logger.add_event("output", "Output Ready", "Response returned to GUI with export context.", level="success")
         return self._build_response(
             response,
@@ -151,7 +165,7 @@ class CallableContextRouter:
 
     def _sheet_error(self, original_message: str, response: str, trace_logger: TraceLogger, chat_id: str, scope: str) -> dict[str, Any]:
         """Persist and return a sheet-resolution response with the Sheets payload."""
-        self._persist_exchange(original_message, response)
+        self._persist_completed_exchange(original_message, response, trace_logger)
         trace_logger.add_event("output", "Output Ready", "Sheet resolution response returned to GUI.", level="warning")
         return self._build_response(
             response,
@@ -161,7 +175,7 @@ class CallableContextRouter:
 
     def _export_error(self, original_message: str, response: str, trace_logger: TraceLogger) -> dict[str, Any]:
         """Persist and return an export-resolution response with Materials payload."""
-        self._persist_exchange(original_message, response)
+        self._persist_completed_exchange(original_message, response, trace_logger)
         return self._build_response(
             response,
             trace_logger,
@@ -173,3 +187,8 @@ class CallableContextRouter:
         response = "AMADEUS error: chat module is not registered."
         trace_logger.add_event("error", "Routing Error", "Core could not find the registered chat module.", level="error")
         return self._build_response(response, trace_logger)
+
+    def _persist_completed_exchange(self, original_message: str, response: str, trace_logger: TraceLogger) -> None:
+        """Save an exchange, then report storage only after the save succeeds."""
+        self._persist_exchange(original_message, response)
+        trace_logger.add_event("module", "Completed Exchange Stored", "Stored the completed exchange in the active chat.", level="success")

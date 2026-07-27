@@ -59,6 +59,42 @@ class TraceLogger:
             # Trace is diagnostic only. AMADEUS must still answer if monitoring fails.
             return
 
+    def add_plan(
+        self,
+        *,
+        source_module: str,
+        title: str,
+        summary: str,
+        route_intent: str,
+        brain_role: BrainRole = BrainRole.ACTIVE,
+    ) -> None:
+        """Record a safe, declared route plan without exposing private work data.
+
+        ``summary`` and ``route_intent`` must describe only code actions the caller
+        has already selected, never user text, prompt content, model output, or
+        hidden reasoning.
+        """
+        try:
+            if self.current_session is None:
+                self.start_session()
+            clean_source = source_module.strip().lower() or "system"
+            clean_intent = route_intent.strip()
+            if not clean_intent:
+                raise ValueError("route_intent must be a non-empty string")
+            # Preserve legacy session consumers while publishing a native PLAN event.
+            self.current_session.add_event("routing", title, summary)
+            self.emitter.emit(
+                source_module=clean_source,
+                brain_role=brain_role,
+                event_type=ProcessEventType.PLAN,
+                status=ProcessEventStatus.RUNNING,
+                title=title,
+                summary=summary,
+                metadata={"legacy_category": "routing", "route_intent": clean_intent},
+            )
+        except Exception:
+            return
+
     def complete_run(self, *, title: str, summary: str) -> None:
         """Finish the current lifecycle without exposing the emitter to callers."""
         try:
@@ -83,6 +119,18 @@ class TraceLogger:
             return any(event.status is ProcessEventStatus.FAILED for event in self.emitter.events)
         except Exception:
             return False
+
+    def finalize_if_active(self, *, title: str, summary: str) -> None:
+        """Close a response path that did not explicitly emit a terminal event."""
+        try:
+            if self.current_session is None or self.emitter.is_terminal:
+                return
+            if self.has_failed_event():
+                self.emitter.fail_run(title="Request Failed", summary="The request could not be completed.")
+            else:
+                self.emitter.complete_run(title=title, summary=summary)
+        except Exception:
+            return
 
     def get_trace_text(self, mode: str = "compact") -> str:
         """Return the latest session as readable monitor text."""

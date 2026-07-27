@@ -180,12 +180,20 @@ class MaterialsCoreRouteTests(unittest.TestCase):
         core = object.__new__(AmadeusCore)
         contexts: list[str] = []
         core.materials_service = type("Materials", (), {"build_callable_context": lambda _self, material_id: f"context:{material_id}"})()
-        core.handle_user_message = lambda message, callable_context=None: contexts.append(callable_context) or {"response": message}
+        received_events: list[object] = []
 
-        result = core.handle_material_message("material:notes.txt", "Question")
+        def handle_user_message(message, callable_context=None, event_listener=None):
+            contexts.append(callable_context)
+            event_listener({"title": "Request Received"})
+            return {"response": message}
+
+        core.handle_user_message = handle_user_message
+
+        result = core.handle_material_message("material:notes.txt", "Question", event_listener=received_events.append)
 
         self.assertEqual({"response": "Question"}, result)
         self.assertEqual(["context:material:notes.txt"], contexts)
+        self.assertEqual([{"title": "Request Received"}], received_events)
 
     def test_get_material_copy_text_delegates_through_materials(self) -> None:
         core = object.__new__(AmadeusCore)

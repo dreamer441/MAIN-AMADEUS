@@ -137,3 +137,7 @@ The Process Monitor shows real events such as input received, annotation check, 
 
 - Flow Chat now uses Enter to send and Shift+Enter to insert a new line, matching dedicated Chats.
 - Flow Chat and Chats each have an arrow control that hides or restores their side panel without clearing its state.
+
+## Live Process Monitor Coverage
+
+- Material-backed chat requests now forward the existing safe Process Monitor events live, matching normal chat requests.

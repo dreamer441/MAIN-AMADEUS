@@ -36,6 +36,7 @@ class ExportSelection:
     record: ExportedChatRecord
     messages: list[ChatHistoryMessage]
     range_label: str
+    persisted_during_request: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,7 +183,10 @@ class ChatExportService:
         `export_missing_chat=True` creates the export on demand. This supports
         `[export][Chat Name]` without forcing Dato to run a separate export command first.
         """
-        record, problem = self._resolve_record(title_or_id, export_missing_chat=export_missing_chat)
+        record, problem, persisted_during_request = self._resolve_record(
+            title_or_id,
+            export_missing_chat=export_missing_chat,
+        )
         if problem is not None:
             return None, problem
         if record is None:
@@ -198,7 +202,12 @@ class ChatExportService:
             selected_messages = messages
             range_label = "all"
 
-        return ExportSelection(record=record, messages=selected_messages, range_label=range_label), None
+        return ExportSelection(
+            record=record,
+            messages=selected_messages,
+            range_label=range_label,
+            persisted_during_request=persisted_during_request,
+        ), None
 
     def build_materials_panel_payload(
         self,
@@ -253,6 +262,7 @@ class ChatExportService:
                 "chat_title": selection.record.chat_title,
                 "range": selection.range_label,
                 "selected_messages": [message.message_number for message in selection.messages],
+                "persisted_during_request": selection.persisted_during_request,
                 "txt_path": selection.record.txt_path,
                 "md_path": selection.record.md_path,
                 "json_path": selection.record.json_path,
@@ -382,12 +392,12 @@ class ChatExportService:
         self,
         title_or_id: str | None,
         export_missing_chat: bool,
-    ) -> tuple[ExportedChatRecord | None, str | None]:
+    ) -> tuple[ExportedChatRecord | None, str | None, bool]:
         """Resolve by export id, chat id, exact title, or normalized title."""
         target = (title_or_id or "current").strip()
         if not target or self._normalize(target) in {"current", "active"}:
             record = self.export_chat(self.chat_history_store.get_current_chat_id())
-            return record, None
+            return record, None, True
 
         records = self.list_exports()
         normalized_target = self._normalize(target)
@@ -396,22 +406,22 @@ class ChatExportService:
             if target in {record.export_id, record.chat_id, record.chat_title}
         ]
         if len(exact_matches) == 1:
-            return exact_matches[0], None
+            return exact_matches[0], None, False
         normalized_matches = [
             record for record in records
             if normalized_target in {self._normalize(record.chat_title), self._normalize(record.export_id), self._normalize(record.chat_id)}
         ]
         if len(normalized_matches) == 1:
-            return normalized_matches[0], None
+            return normalized_matches[0], None, False
         if len(exact_matches) > 1 or len(normalized_matches) > 1:
-            return None, f"Multiple exported chats matched `{target}`. Use a more exact chat title or export id."
+            return None, f"Multiple exported chats matched `{target}`. Use a more exact chat title or export id.", False
 
         if export_missing_chat:
             chat = self._resolve_chat(target)
             if chat is not None:
-                return self.export_chat(chat.chat_id), None
+                return self.export_chat(chat.chat_id), None, True
 
-        return None, f"No exported chat or existing chat matched `{target}`. Use `[export][list]` to see available exports."
+        return None, f"No exported chat or existing chat matched `{target}`. Use `[export][list]` to see available exports.", False
 
     def _resolve_chat(self, target: str) -> ChatMetadata | None:
         """Find a chat by title/id so exports can be created on demand."""

@@ -12,3 +12,6 @@
 - Registry reads the live dedicated-chat list for each Flow context build, reflecting create, metadata-update, and delete mutations.
 - Shared Chat module, identity prompt builder, and safe Process Monitor lifecycle through the separate Core Flow route.
 - Live shared event delivery and final event-payload reconciliation for the GUI.
+- Flow declares its route work plan, reports actual Flow-history loading and
+  metadata-only registry loading, then records configured-LLM response composition
+  and successful isolated exchange storage without exposing prompt or chat bodies.

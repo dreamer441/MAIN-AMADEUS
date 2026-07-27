@@ -87,12 +87,16 @@ class ChatContextBuilder:
             selected_types = []
             if context_bundle.recent_conversation:
                 selected_types.append("recent_conversation")
+                trace_logger.add_event("module", "Recent History Loaded", "Loaded recent history from the active chat.", level="success")
             if context_bundle.project_context:
                 selected_types.append("project_overview")
+                trace_logger.add_event("module", "Project Overview Selected", "Selected the project overview for this request.", level="success")
             if context_bundle.memory_context:
                 selected_types.append("memory")
+                trace_logger.add_event("module", "Explicit Memory Loaded", "Loaded explicit saved memory for this request.", level="success")
             if context_bundle.chat_workspace_context:
                 selected_types.append("chat_workspace")
+                trace_logger.add_event("module", "Chat Workspace Loaded", "Loaded active chat workspace metadata.", level="success")
             selected_summary = ", ".join(selected_types) if selected_types else "none"
             trace_logger.add_event(
                 "module",

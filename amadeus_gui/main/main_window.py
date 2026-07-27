@@ -117,7 +117,11 @@ class ChatResponseWorker(QObject):
         """Call Core and emit a response payload that the GUI can display safely."""
         try:
             result = (
-                self.core.handle_material_message(self.material_id, self.message)
+                self.core.handle_material_message(
+                    self.material_id,
+                    self.message,
+                    event_listener=self.process_event.emit,
+                )
                 if self.material_id else self.core.handle_user_message(
                     self.message, event_listener=self.process_event.emit
                 )

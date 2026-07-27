@@ -348,6 +348,18 @@ class FlowContextAndCoreTests(unittest.TestCase):
         self.assertIn("[AVAILABLE DEDICATED CHATS]", bundle.dedicated_chat_metadata)
         self.assertIn("No dedicated chats", bundle.dedicated_chat_metadata)
 
+    def test_flow_history_event_is_emitted_only_after_history_load_without_body_text(self) -> None:
+        flow_store = FlowChatStore(self.root)
+        flow_store.append_message("User", "Private earlier Flow body")
+        logger = TraceLogger()
+        logger.start_session()
+
+        FlowContextBuilder(flow_store, ChatRegistry(ChatHistoryStore(self.root))).build_for_message("Current request", trace_logger=logger)
+
+        events = logger.get_trace_events()
+        self.assertIn("Flow History Loaded", [event["title"] for event in events])
+        self.assertNotIn("Private earlier Flow body", str(events))
+
     def test_fake_llm_receives_flow_context_but_never_dedicated_message_bodies(self) -> None:
         llm = _FakeLLM()
         core = AmadeusCore(llm_client=llm, project_root=self.root)
@@ -376,12 +388,13 @@ class FlowContextAndCoreTests(unittest.TestCase):
         self.assertEqual(
             [
                 "Flow Request Received",
+                "Flow Chat Work Plan",
                 "Flow Context Started",
                 "Dedicated Chat Registry Requested",
                 "Dedicated Chat Registry Loaded",
                 "Flow Context Complete",
-                "LLM Request",
-                "LLM Response",
+                "Preparing Answer Through Configured LLM",
+                "Response Composed",
                 "Flow Response Stored",
                 "Flow Output Returned",
             ],

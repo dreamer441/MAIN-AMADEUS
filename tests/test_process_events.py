@@ -191,6 +191,43 @@ class TraceLoggerCompatibilityTests(unittest.TestCase):
 
         self.assertEqual("completed", logger.get_trace_events()[-1]["status"])
 
+    def test_explicit_plan_uses_validated_plan_type_and_safe_route_intent(self) -> None:
+        logger = TraceLogger()
+        logger.start_session()
+
+        logger.add_plan(
+            source_module="core",
+            title="Normal Chat Work Plan",
+            summary="Declared route: build eligible context and prepare an answer.",
+            route_intent="normal_chat_context_llm",
+        )
+
+        event = logger.get_trace_events()[-1]
+        self.assertEqual("plan", event["event_type"])
+        self.assertEqual("normal_chat_context_llm", event["metadata"]["route_intent"])
+        self.assertEqual("routing", event["category"])
+
+    def test_finalize_if_active_completes_once_and_preserves_existing_terminal(self) -> None:
+        logger = TraceLogger()
+        logger.start_session()
+        logger.add_event("input", "Request Received", "Request received from GUI.")
+
+        logger.finalize_if_active(title="Response Returned", summary="Response returned to GUI.")
+        logger.finalize_if_active(title="Duplicate", summary="Must not be recorded.")
+
+        self.assertEqual(["Request Received", "Response Returned"], [event["title"] for event in logger.get_trace_events()])
+        self.assertEqual("completed", logger.get_trace_events()[-1]["status"])
+
+    def test_finalize_if_active_fails_when_an_operational_failure_exists(self) -> None:
+        logger = TraceLogger()
+        logger.start_session()
+        logger.add_event("error", "Safe Failure", "A safe operational failure occurred.", level="error")
+
+        logger.finalize_if_active(title="Response Returned", summary="Must become failure.")
+
+        self.assertEqual(["Safe Failure", "Request Failed"], [event["title"] for event in logger.get_trace_events()])
+        self.assertEqual("failed", logger.get_trace_events()[-1]["status"])
+
 
 class ChatLifecycleTests(unittest.TestCase):
     """Verify Chat reports LLM boundaries without publishing prompt content."""
@@ -202,7 +239,10 @@ class ChatLifecycleTests(unittest.TestCase):
 
         self.assertEqual("ok", chat.handle_message("secret prompt", trace_logger=logger))
 
-        self.assertEqual(["LLM Request", "LLM Response"], [event["title"] for event in logger.get_trace_events()])
+        self.assertEqual(
+            ["Preparing Answer Through Configured LLM", "Response Composed"],
+            [event["title"] for event in logger.get_trace_events()],
+        )
         self.assertNotIn("secret prompt", str(logger.get_trace_events()))
 
 

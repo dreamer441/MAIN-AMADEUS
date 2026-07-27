@@ -32,4 +32,6 @@ Context Builder selects context; it does not answer the user directly, switch ch
 ## Shared Process Events
 
 - `build_for_message()` accepts an optional `TraceLogger` and reports genuine context start/completion boundaries.
-- Completion reports only selected context type names (`recent_conversation`, `project_overview`, `memory`, and `chat_workspace`), never context values.
+- Reports each source only after it was actually loaded or selected: recent history,
+  project overview, explicit memory, and active chat workspace metadata. No context
+  values are included in events.

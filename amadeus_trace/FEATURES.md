@@ -24,6 +24,10 @@
 - Compact and detailed text rendering.
 - Safe `TraceLogger` wrapper so monitoring failures do not break chat.
 - `TraceLogger` exposes safe `complete_run()` and `fail_run()` lifecycle terminals to its module callers.
+- `TraceLogger.add_plan()` emits a validated native `PLAN` event for a declared,
+  user-visible route intent while retaining the legacy routing display category.
+- `TraceLogger.finalize_if_active()` closes early-return response paths without
+  changing an already emitted completed or failed terminal event.
 - `TraceLogger.has_failed_event()` lets Core finalize a run after a module records an operational failure.
 - GUI-ready structured event list for future filters and exports.
 - Designed to show real execution events only, not hidden internal thoughts.
@@ -38,6 +42,11 @@ reconciles the Process Monitor after the response completes.
 The Process Monitor is limited to real, safe operational events. It does not
 expose hidden reasoning or chain-of-thought, and listener failures cannot affect
 the underlying chat request.
+
+Context, Flow, callable-context, and Side Ask routes now report only sources
+actually loaded or selected, response composition at the configured LLM boundary,
+and successful exchange persistence. They never include prompt bodies, context
+values, model responses, or backend error bodies.
 
 ## Current Event Categories
 

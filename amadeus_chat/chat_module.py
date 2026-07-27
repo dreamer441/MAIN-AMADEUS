@@ -75,8 +75,8 @@ class AmadeusChatModule:
             self._trace(
                 trace_logger,
                 "llm",
-                "LLM Request",
-                "Sending request to the configured LLM.",
+                "Preparing Answer Through Configured LLM",
+                "Sending a prepared request to the configured LLM.",
             )
             response = self.llm_client.generate(
                 prompt=prompt,
@@ -85,8 +85,8 @@ class AmadeusChatModule:
             self._trace(
                 trace_logger,
                 "llm",
-                "LLM Response",
-                "Configured LLM returned a response.",
+                "Response Composed",
+                "Configured LLM returned a response for delivery.",
                 level="success",
             )
             return response
@@ -94,7 +94,7 @@ class AmadeusChatModule:
             self._trace(
                 trace_logger,
                 "error",
-                "LLM Response",
+                "Configured LLM Unavailable",
                 "Configured LLM could not return a response.",
                 level="error",
             )

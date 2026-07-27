@@ -104,6 +104,27 @@ class ProcessMonitorLiveEventTests(unittest.TestCase):
         self.assertEqual("Request Received", received[0]["title"])
         self.assertEqual(["event", "finished"], order)
 
+    def test_material_worker_forwards_live_events_before_finished(self) -> None:
+        order: list[str] = []
+
+        class Core:
+            def handle_material_message(self, material_id: str, message: str, event_listener=None) -> dict[str, str]:
+                self.material_request = (material_id, message)
+                event_listener({"sequence": 1, "title": "Request Received", "summary": "Message received."})
+                return {"response": "ok"}
+
+        core = Core()
+        worker = ChatResponseWorker(core, "hello", material_id="material:private.txt")
+        received: list[dict[str, object]] = []
+        worker.process_event.connect(lambda event: (received.append(event), order.append("event")))
+        worker.finished.connect(lambda _result: order.append("finished"))
+
+        worker.run()
+
+        self.assertEqual(("material:private.txt", "hello"), core.material_request)
+        self.assertEqual("Request Received", received[0]["title"])
+        self.assertEqual(["event", "finished"], order)
+
     def test_threaded_worker_delivers_live_event_before_final_payload_reconciliation(self) -> None:
         final_events = [
             {"sequence": 1, "title": "Request Received", "summary": "Message received."},

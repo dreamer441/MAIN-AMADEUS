@@ -44,6 +44,8 @@ class FlowContextBuilder:
         del message
         self._trace(trace_logger, "Flow Context Started", "Selecting Flow history and dedicated-chat metadata.")
         recent_flow_history = self._build_recent_flow_history()
+        if recent_flow_history:
+            self._trace(trace_logger, "Flow History Loaded", "Loaded recent Flow history.", level="success")
 
         self._trace(trace_logger, "Dedicated Chat Registry Requested", "Requesting dedicated-chat metadata only.")
         metadata = self.chat_registry.get_relevant_chat_metadata()

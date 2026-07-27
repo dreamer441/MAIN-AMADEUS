@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-27 - Process Monitor: Safe Global Enrichment
+
+- Date: 2026-07-27
+- Phase: Process Monitor enrichment
+- Feature or fix: Added truthful, granular request events across normal chat, Flow, Side Ask, and callable annotation routes.
+- What changed: Added the `TraceLogger.add_plan()` native `PLAN` API for declared route intent, source-specific context load events, configured-LLM response composition events, successful persistence events, and fallback response-path terminal finalization.
+- Files/modules affected: `amadeus_trace`, `amadeus_core`, `context_builder`, `amadeus_chat`, `flow_chat`, `annotation_module`, focused tests, and module documentation.
+- User-visible behavior: The Process Monitor now names work that actually occurred, such as loading recent history, selecting project overview, loading explicit memory, preparing an answer through the configured LLM, and storing a completed exchange.
+- Architecture notes: Plans describe only declared code routes. Events exclude user messages, prompt/context bodies, model responses, hidden reasoning, and backend error details; run IDs, sequences, listener isolation, and terminal rejection remain emitter-owned.
+- Tests performed: Focused process, normal-chat/annotation, and Flow tests plus full suite and compile validation are run with this delivery.
+- Known limitations: Events remain in-memory per request; trace export, persistence, and Process Monitor V2 filtering/timeline remain future work.
+
 ## 2026-07-27 - Flow Chat: Documentation
 
 - Date: 2026-07-27
