@@ -144,3 +144,10 @@ Core routes. It should not become a place for large feature logic. If Core start
 - Core exposes project-root tree navigation and file-open APIs while delegating every filesystem operation to Project File Reader.
 - Core asks about a selected file directly and adds file context only when the caller explicitly enables it.
 - Enabled file context is verified, line-labelled, range-limited when requested, and never saved as memory or automatically injected into later requests.
+
+
+## Canvas Foundation Routing
+
+- Core creates and registers the first-class `canvas` module facade.
+- Core exposes safe Canvas workspace metadata to the GUI without importing PyQt scene internals.
+- Canvas remains a separate module boundary prepared for future structured objects, persistence, context extraction, and AMADEUS response routing.

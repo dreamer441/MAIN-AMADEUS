@@ -91,3 +91,12 @@
 - [ ] Use red for ignored messages.
 - [ ] Avoid coloring full message text because it reduces readability.
 - [ ] Add exact message-reference controls after `[current][number]` exists.
+
+
+## Canvas GUI Roadmap
+
+- Add typed text blocks with stable IDs and direct editing.
+- Add object selection, multi-selection, dragging, resizing, copy/paste, undo, and redo.
+- Add semantic connectors, groups, comments, and branch traversal.
+- Add viewport, selection, branch, and whole-canvas context previews before AMADEUS requests.
+- Keep Canvas persistence and context logic in `canvas_module`; the GUI should render and forward explicit user actions only.

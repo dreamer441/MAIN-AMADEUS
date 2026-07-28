@@ -16,6 +16,8 @@ from PyQt6.QtWidgets import QApplication, QLabel
 from amadeus_gui import AmadeusMainWindow
 from amadeus_gui.flow_chat_view import FlowMessageInput
 from amadeus_gui.main.main_window import NewChatDialog
+from canvas_module import CanvasWorkspaceDescriptor
+from canvas_module.gui import CanvasView
 from mindmap.gui import MindMapView
 from mindmap.models import GraphNode, GraphSnapshot
 
@@ -42,6 +44,14 @@ class FakeFlowCore:
 
     def get_project_tree(self, _relative_path: str) -> dict:
         return {"path": "", "folders": [], "files": []}
+
+    def get_canvas_workspace_descriptor(self) -> CanvasWorkspaceDescriptor:
+        return CanvasWorkspaceDescriptor(
+            workspace_id="main",
+            title="AMADEUS Canvas",
+            purpose="Spatial brainstorming test workspace.",
+            status="foundation_ready",
+        )
 
     def get_comments_panel_payload(self) -> dict:
         return {"type": "comments", "title": "Comments", "content": "", "metadata": {"comments": []}}
@@ -127,9 +137,9 @@ class FlowChatShellTests(unittest.TestCase):
         self.assertIs(self.window.flow_chat_view, self.window.views.currentWidget())
         self.assertIn("Welcome to Flow.", self.window.flow_chat_view.flow_history.toPlainText())
 
-    def test_sidebar_has_all_five_navigation_labels(self) -> None:
+    def test_sidebar_has_all_six_navigation_labels(self) -> None:
         self.assertEqual(
-            ["Flow Chat", "Chats", "Code", "Mind Map", "Habit Tracker"],
+            ["Flow Chat", "Chats", "Code", "Mind Map", "Canvas", "Habit Tracker"],
             list(self.window.navigation_buttons),
         )
 
@@ -163,6 +173,15 @@ class FlowChatShellTests(unittest.TestCase):
             and "1 nodes" in self.window.mind_map_view.status_label.text()
         ))
         self.assertIn("1 nodes", self.window.mind_map_view.status_label.text())
+
+    def test_canvas_page_is_a_persistent_core_backed_workspace(self) -> None:
+        self.assertIsInstance(self.window.canvas_view, CanvasView)
+        self.window.navigation_buttons["Canvas"].click()
+        self.assertIs(self.window.canvas_view, self.window.views.currentWidget())
+        self.assertEqual("main", self.window.canvas_view.descriptor.workspace_id)
+        self.assertEqual("Canvas", self.window.canvas_view.module_name)
+        self.assertEqual("canvasSurface", self.window.canvas_view.surface.objectName())
+        self.assertIn("foundation ready", self.window.canvas_view.status_label.text().lower())
 
     def test_flow_worker_renders_live_event_before_final_payload_reconciliation(self) -> None:
         core = CoordinatedFlowCore()

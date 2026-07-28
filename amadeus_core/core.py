@@ -18,6 +18,7 @@ from amadeus_chat import AmadeusChatModule
 from amadeus_core.module_registry import ModuleRegistry
 from amadeus_trace import TraceLogger
 from chat_registry import ChatRegistry
+from canvas_module import CanvasModule
 from context_builder import ChatContextBuilder
 from identity_module import IdentityPromptBuilder, IdentityService
 from export_module import ChatExportService
@@ -90,6 +91,11 @@ class AmadeusCore:
         # Comments are lightweight notes attached to selected chat text. They are
         # deliberately separate from reward/importance/memory until those systems are designed.
         self.comment_service = CommentService(self.project_root)
+
+        # Canvas owns the future spatial brainstorming workspace. The first
+        # phase exposes only a stable facade and workspace identity; scene
+        # rendering remains inside canvas_module.gui.
+        self.canvas_module = CanvasModule(self.project_root)
 
         # Mind Map owns local graph persistence and validation. Core exposes its
         # facade so GUI and future source adapters never access SQLite directly.
@@ -167,6 +173,7 @@ class AmadeusCore:
         self.module_registry.register("exports", self.export_service)
         self.module_registry.register("side_ask", self.side_ask_service)
         self.module_registry.register("comments", self.comment_service)
+        self.module_registry.register("canvas", self.canvas_module)
         self.module_registry.register("mind_map", self.mind_map_module)
         self.module_registry.register("context_builder", self.context_builder)
 
@@ -179,6 +186,10 @@ class AmadeusCore:
         self.annotation_registry.register("sheet", SheetAnnotation())
         self.annotation_registry.register("export", ExportAnnotation())
         self.annotation_registry.register("mindmap", MindMapAnnotation())
+
+    def get_canvas_workspace_descriptor(self) -> Any:
+        """Return safe Canvas workspace metadata for the persistent GUI page."""
+        return self.canvas_module.get_workspace_descriptor()
 
     def handle_user_message(
         self,

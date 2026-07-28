@@ -36,3 +36,8 @@ Flow context has two isolated layers: Layer 0 is recent Flow history; Layer 1 is
 ## Memory V1 Role
 
 Core owns only the routing: it registers `memory_module`, routes `[memory]` annotations, and passes memory context into Context Builder/Chat. Memory save/list logic stays inside `memory_module`.
+
+
+## Canvas module boundary
+
+Core now owns a registered `CanvasModule` facade and exposes only safe workspace metadata to the GUI. PyQt scene rendering stays inside `canvas_module.gui`. Future Canvas persistence, context assembly, LLM requests, and Mind Map conversion should be added through Canvas public services and narrow Core routes rather than direct GUI/storage coupling.

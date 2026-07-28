@@ -34,6 +34,7 @@ from amadeus_core import AmadeusCore
 from amadeus_gui.flow_chat_view import FlowChatView
 from amadeus_gui.module_placeholder_view import ModulePlaceholderView
 from amadeus_gui.side import RightPanelWidget
+from canvas_module.gui import CanvasView
 from mindmap.gui import MindMapView
 
 
@@ -407,12 +408,14 @@ class AmadeusMainWindow(QMainWindow):
         self.flow_chat_view = FlowChatView(self.core)
         self.code_view = ModulePlaceholderView("Code", "A focused workspace for future coding tasks.")
         self.mind_map_view = MindMapView(self.core, refresh_on_init=False)
+        self.canvas_view = CanvasView(self.core)
         self.habit_tracker_view = ModulePlaceholderView("Habit Tracker", "A future home for intentional habit tracking.")
         self.views = QStackedWidget()
         self.views.addWidget(self.flow_chat_view)
         self.views.addWidget(self.dedicated_chat_view)
         self.views.addWidget(self.code_view)
         self.views.addWidget(self.mind_map_view)
+        self.views.addWidget(self.canvas_view)
         self.views.addWidget(self.habit_tracker_view)
 
         shell = QWidget()
@@ -422,7 +425,7 @@ class AmadeusMainWindow(QMainWindow):
         sidebar_title.setStyleSheet("font-size: 18px; font-weight: bold; padding: 8px;")
         sidebar.addWidget(sidebar_title)
         self.navigation_buttons: dict[str, QPushButton] = {}
-        for index, label in enumerate(("Flow Chat", "Chats", "Code", "Mind Map", "Habit Tracker")):
+        for index, label in enumerate(("Flow Chat", "Chats", "Code", "Mind Map", "Canvas", "Habit Tracker")):
             button = QPushButton(label)
             button.setCheckable(True)
             button.clicked.connect(lambda _checked, view_index=index: self._select_view(view_index))

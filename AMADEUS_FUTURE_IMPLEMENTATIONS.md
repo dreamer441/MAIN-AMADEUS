@@ -124,3 +124,18 @@ Global checklist for project-wide tracking. Do not delete completed items; check
 - [ ] Use green message-number badge for important messages.
 - [ ] Use red message-number badge for ignored messages.
 - [ ] Keep message text itself uncolored so readability stays high.
+
+
+## Infinite Canvas / Spatial Conversation
+
+- [x] Add a first-class Core-registered Canvas module and visible zoomable/pannable workspace shell.
+- [ ] Add typed text blocks with stable IDs and in-place editing.
+- [ ] Add selection, multi-selection, dragging, resizing, deletion, copy/paste, undo, and redo.
+- [ ] Add semantic lines/arrows, relationship labels, connector comments, groups, and branch traversal.
+- [ ] Add safe structured Canvas persistence and revision history.
+- [ ] Use the visible viewport as the default context lens, with explicit selection, branch, and whole-canvas modes.
+- [ ] Add context preview, token budgeting, and honest excluded-object reporting.
+- [ ] Send structured Canvas context to AMADEUS and insert movable source-linked response blocks.
+- [ ] Add delta-based repeated sends using object and connector revisions.
+- [ ] Convert reviewed Canvas branches into Mind Map candidates through the Creation Module.
+- [ ] Add stylus strokes, handwriting recognition, graph interpretation, imported images, and later visual collaboration.

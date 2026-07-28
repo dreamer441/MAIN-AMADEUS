@@ -89,3 +89,10 @@ Do not add memory, autonomy, file editing, Mind Map storage/layout, or reasoning
 - [ ] Add Side Ask-to-sheet action.
 - [ ] Add Side Ask-to-memory suggestion after user confirmation.
 - [ ] Use exact message refs after `[current]` exists.
+
+
+## Canvas Routing Follow-ups
+
+- Add Core routes only when Canvas operations become real module actions, beginning with document load/save and structured object commands.
+- Keep viewport context assembly, delta tracking, and Canvas LLM requests inside Canvas services rather than growing Canvas-specific logic inside Core.
+- Route future Canvas-to-Mind-Map conversion through the Creation Module instead of writing graph storage directly.

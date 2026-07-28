@@ -452,3 +452,16 @@ Append-only global project progress log. Module-specific details still belong in
 - **Architecture notes:** Changes remain within GUI widgets; Core, storage, LLM, and process-event ownership are unchanged.
 - **Tests performed:** Focused GUI keyboard and side-panel state tests, full suite, and compilation.
 - **Known limitations:** Panel visibility is retained while the application runs but is not saved between restarts.
+
+
+## 2026-07-28 - Canvas Module Workspace Foundation
+
+- Date: 2026-07-28
+- Phase: Canvas module foundation
+- Feature or fix: Added the first visible AMADEUS Infinite Canvas module space.
+- What changed: Added a Core-registered `CanvasModule` facade and typed workspace descriptor, a persistent Canvas navigation page, a large adaptive-grid `QGraphicsView`, drag-to-pan navigation, cursor-centred wheel zoom, lazy GUI exports, focused module tests, and Canvas documentation.
+- Files/modules affected: `canvas_module`, `amadeus_core`, `amadeus_gui`, GUI and Canvas tests, root/module documentation, and this changelog.
+- User-visible behavior: The main sidebar now includes Canvas. Opening it shows a real navigable workspace instead of a generic foundation-pending page.
+- Architecture notes: The current phase creates only the module and GUI boundary. No Canvas objects, persistence, context injection, LLM request, or Mind Map conversion has been claimed. Future GUI actions must route through Core/module public APIs rather than owning storage or reasoning.
+- Tests performed: Python compilation and focused non-GUI Canvas tests. Full Windows/PyQt6 validation remains required because this Linux environment does not provide PyQt6 or Windows-only `msvcrt`.
+- Known limitations: The Canvas is empty except for navigation and visual guidance; typed blocks and structured interactions begin in the next phase.

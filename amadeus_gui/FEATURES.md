@@ -26,6 +26,7 @@
 - The GUI receives Flow history through Core and never reads Flow storage directly.
 - Flow renders shared Process Monitor events as they arrive and replaces that provisional view with Core's completed event payload.
 - Mind Map is a persistent Core-backed graph page with an interactive layout canvas, while Code and Habit Tracker remain named placeholder areas only.
+- Canvas is now a persistent Core-backed workspace page with a real infinite-style grid, mouse-drag panning, and wheel zoom; structured Canvas objects remain the next phase.
 
 The Process Monitor shows real events such as input received, annotation check, routing decision, chat module use, LLM call status, errors, and output ready.
 

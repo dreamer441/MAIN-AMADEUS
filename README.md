@@ -14,7 +14,7 @@ This first rebuild is intentionally small. It creates a working shell with:
 
 ## Current Behavior
 
-The app opens on the Flow Chat home page. The persistent sidebar switches between Flow Chat, dedicated Chats, and named Code, Mind Map, and Habit Tracker foundation pages. Flow and dedicated Chats are separate conversations: Flow has its own local history, while the existing dedicated-chat selector, New Chat/Delete Chat controls, annotations, and right-side workspace remain under Chats. The Process Monitor shows real execution events from the latest request, not hidden reasoning.
+The app opens on the Flow Chat home page. The persistent sidebar switches between Flow Chat, dedicated Chats, Code, Mind Map, Canvas, and Habit Tracker. Flow and dedicated Chats are separate conversations: Flow has its own local history, while the existing dedicated-chat selector, New Chat/Delete Chat controls, annotations, and right-side workspace remain under Chats. Canvas currently provides its first real infinite-style workspace shell; structured brainstorming objects and AMADEUS interaction are the next implementation phases. The Process Monitor shows real execution events from the latest request, not hidden reasoning.
 
 Chat now uses the local Ollama LLM client. The default lightweight model is `llama3.2:latest`.
 
@@ -218,3 +218,8 @@ Exports are not active memory. They are stored references that AMADEUS can use o
 ## Patch Note: Side Ask V1 + Simple Comments
 
 The right panel now includes **Side Ask** and **Comments** tabs. Side Ask is a temporary secondary question flow that can use selected chat text as context, then optionally save its Q&A into the current chat or create a new chat from it. Comments let Dato select chat text and attach a simple note without mixing it with memory, reward, or importance yet.
+
+
+## Canvas Foundation
+
+The new **Canvas** page is a first-class Core-registered module space rather than a generic placeholder. It provides a persistent large grid with drag-to-pan and cursor-centred wheel zoom. The Canvas is intentionally defined as a structured future scene, not a screenshot-only whiteboard. Typed blocks, selection, connectors, persistence, viewport context, Canvas conversations, handwriting, and Mind Map conversion are documented as future phases and are not yet presented as working features.
