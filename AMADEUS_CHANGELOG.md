@@ -2,6 +2,78 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-07-14 - Shared Process Events: Foundation Documentation And Release
+
+- Date: 2026-07-14
+- Phase: Shared Process Events - Task 4
+- Feature or fix: Documented and released the shared process-event foundation only.
+- What changed: Documented the immutable validated event model, emitter lifecycle and listener API, normal-chat live GUI bridge, safety boundary, and `TraceLogger` compatibility facade. Updated future scope to retain Process Monitor V2, Inner Brain, and persistent background jobs as future work.
+- Files/modules affected: `amadeus_trace` documentation, `amadeus_gui` documentation, global changelog, and Task 4 report.
+- User-visible behavior: Process Monitor documentation now accurately describes incremental normal-chat event display followed by final-payload reconciliation; no new runtime behavior is introduced by this release task.
+- Architecture notes: `ProcessEventEmitter` remains framework-independent and listener failures remain isolated. Core exposes a framework-neutral listener while the GUI worker performs the PyQt adaptation. This is the foundation only, not Process Monitor V2, an Inner Brain, or persistent job tracking.
+- Tests performed: `python` was unavailable through the Windows App Execution Alias, so `py -3 -m compileall .` completed successfully and `py -3 -m unittest discover -s tests -v` passed 62 tests; details are recorded in `.superpowers/sdd/shared-events-task-4.md`.
+- Known limitations: Process Monitor V2 filtering/timeline, trace export and persistence, any Inner Brain presentation, and persistent background-job tracking are not implemented.
+
+## 2026-07-14 - Shared Process Events: Task 2 Failure Lifecycle Fixes
+
+- Date: 2026-07-14
+- Phase: Shared Process Events - Task 2 review fixes
+- Feature or fix: Completed safe terminal handling for LLM and missing-chat failures.
+- What changed: Chat emits a generic failed LLM response event without error-body text. Core detects module failure events and finalizes the run as failed; the missing-chat branch now also emits the same terminal failure.
+- Files/modules affected: `amadeus_core`, `amadeus_chat`, `amadeus_trace`, lifecycle tests, module documentation, changelog, and Task 2 report.
+- User-visible behavior: Existing detailed LLM and missing-chat response strings are unchanged, while Process Monitor events remain safe and terminally accurate.
+- Architecture notes: Chat owns the LLM boundary event; Core retains ownership of the final run state through the TraceLogger facade.
+- Tests performed: Recorded in `.superpowers/sdd/shared-events-task-2.md`.
+- Known limitations: Live GUI event forwarding remains Task 3.
+
+## 2026-07-14 - Shared Process Events: Active Chat Lifecycle
+
+- Date: 2026-07-14
+- Phase: Shared Process Events - Task 2
+- Feature or fix: Added genuine normal active-chat lifecycle events.
+- What changed: Core now reports receipt, route, and terminal result/failure; Context Builder reports context start and safe selected-type completion; Chat reports LLM request and response boundaries. `TraceLogger` now provides safe terminal facade methods.
+- Files/modules affected: `amadeus_core`, `context_builder`, `amadeus_chat`, `amadeus_trace`, focused lifecycle tests, module documentation, and Task 2 report.
+- User-visible behavior: Normal chat returns one ordered Process Monitor lifecycle without prompt bodies, context values, or LLM response text.
+- Architecture notes: Lifecycle ownership remains at the actual Core, Context Builder, and Chat execution boundaries; no GUI integration was added.
+- Tests performed: Recorded in `.superpowers/sdd/shared-events-task-2.md`.
+- Known limitations: Events are returned with the completed Core response; live GUI forwarding is Task 3.
+
+## 2026-07-14 - Shared Process Events: Legacy Empty Session Fix
+
+- Date: 2026-07-14
+- Phase: Shared Process Events - Task 1
+- Feature or fix: Restored empty legacy trace sessions.
+- What changed: `TraceLogger.start_session()` now starts its emitter run without recording a synthetic event; direct `ProcessEventEmitter.start_run()` retains its initial running event by default.
+- Files/modules affected: `amadeus_trace`, focused process-event tests, trace feature documentation, changelog, and Task 1 report.
+- User-visible behavior: A newly started legacy Process Monitor session remains empty until code adds its first trace event.
+- Architecture notes: Silent start is an opt-in emitter parameter used by the compatibility facade only.
+- Tests performed: Recorded in the appended Task 1 report.
+- Known limitations: Active-chat lifecycle ownership and live GUI delivery remain separate follow-up tasks.
+
+## 2026-07-14 - Shared Process Events: Task 1 Review Fixes
+
+- Date: 2026-07-14
+- Phase: Shared Process Events - Task 1
+- Feature or fix: Preserved legacy trace categories and made run terminal states enforceable.
+- What changed: `TraceLogger` now retains normalized legacy categories for compatibility rendering while still publishing validated event fields. Completed and failed runs reject later events and duplicate/conflicting terminal lifecycle calls.
+- Files/modules affected: `amadeus_trace`, focused process-event tests, trace feature documentation, changelog, and Task 1 report.
+- User-visible behavior: Existing detailed trace text and structured payloads keep `file`, `llm`, `annotation`, `module`, and `routing` labels.
+- Architecture notes: The legacy category is compatibility metadata owned by the facade; the event model continues to use validated types. Terminal state is reset only by a new run.
+- Tests performed: Recorded in the appended Task 1 report.
+- Known limitations: Active-chat lifecycle ownership and live GUI delivery remain separate follow-up tasks.
+
+## 2026-07-14 - Shared Process Events: Task 1 Foundation
+
+- Date: 2026-07-14
+- Phase: Shared Process Events - Task 1
+- Feature or fix: Added validated framework-independent process-event recording and legacy trace compatibility.
+- What changed: Added immutable `ProcessEvent` records, validated enums, ordered run lifecycle emission, fault-isolated subscriptions, and a `TraceLogger` facade that maps legacy category/level calls to the emitter while retaining historic text and payload aliases.
+- Files/modules affected: `amadeus_trace`, focused process-event tests, and trace documentation.
+- User-visible behavior: Existing Process Monitor trace text and legacy structured fields remain available; the backend can now provide validated ordered events to later lifecycle and GUI work.
+- Architecture notes: `ProcessEventEmitter` has no PyQt dependency and is the source of truth for `TraceLogger` payload output. Core/module lifecycle ownership and GUI live delivery are intentionally not included.
+- Tests performed: `py -3 -m unittest tests.test_process_events tests.test_annotation_core -v` passed; full discovery and compile checks are recorded in the Task 1 report.
+- Known limitations: Active-chat code does not yet emit the complete lifecycle, and no GUI listener bridge has been added.
+
 ## 2026-07-14 - Phase 6 Follow-Up: Comment Target And Jump Fixes
 
 - Date: 2026-07-14

@@ -1,4 +1,4 @@
-"""Trace event model for the AMADEUS Process Monitor.
+"""Legacy trace event compatibility model for the AMADEUS Process Monitor.
 
 A TraceEvent is not a thought. It is a real execution marker created by code while
 AMADEUS handles a user request. This boundary matters: the monitor helps debug the
@@ -25,7 +25,11 @@ VALID_TRACE_CATEGORIES = {
 
 @dataclass(frozen=True)
 class TraceEvent:
-    """One real execution event recorded while AMADEUS handles a message."""
+    """Legacy event retained for direct external consumers.
+
+    New request code records validated ``ProcessEvent`` instances through
+    ``ProcessEventEmitter``; this model preserves the historic standalone API.
+    """
 
     category: str
     title: str

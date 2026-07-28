@@ -8,6 +8,7 @@ Current request flow:
 GUI -> Core -> Annotation check OR Chat route -> Context Builder / Identity -> Chat -> LLM Client -> GUI
 """
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -153,7 +154,12 @@ class AmadeusCore:
         self.annotation_registry.register("sheet", SheetAnnotation())
         self.annotation_registry.register("export", ExportAnnotation())
 
-    def handle_user_message(self, message: str, callable_context: str | None = None) -> dict[str, Any]:
+    def handle_user_message(
+        self,
+        message: str,
+        callable_context: str | None = None,
+        event_listener: Callable[[dict[str, object]], None] | None = None,
+    ) -> dict[str, Any]:
         """Route user text and return both AMADEUS output and Process Monitor trace.
 
         This method is the main request pipeline. Keep it readable: each trace event
@@ -161,11 +167,14 @@ class AmadeusCore:
         """
         trace_logger = TraceLogger()
         trace_logger.start_session()
+        if event_listener is not None:
+            # Core publishes plain event rows so UI adapters never enter the backend.
+            trace_logger.emitter.subscribe(lambda event: event_listener(event.to_dict()))
 
         clean_message = message.strip()
         trace_logger.add_event(
             "input",
-            "Input Received",
+            "Request Received",
             "Message received from GUI.",
         )
 
@@ -189,11 +198,6 @@ class AmadeusCore:
         try:
             # Annotation Module owns message-level block extraction. Core only consumes
             # its structured result and never searches for `[end]` syntax itself.
-            trace_logger.add_event(
-                "annotation",
-                "Annotation Check",
-                "Checking for parser-recognized annotation blocks.",
-            )
             parsed_message = self.annotation_parser.parse_message(message)
             if parsed_message.blocks and not parsed_message.is_legacy_leading_annotation:
                 return self._handle_annotation_blocks(parsed_message, clean_message, trace_logger)
@@ -275,100 +279,29 @@ class AmadeusCore:
             # file reads now live behind `[file]` to avoid fragile natural-language parsing.
             trace_logger.add_event(
                 "routing",
-                "Routing Decision",
-                "No annotation detected. Routing to normal chat; exact file access requires [file].",
+                "Request Route",
+                "Normal chat route selected.",
             )
 
             chat_module = self.module_registry.get("chat")
             if chat_module is None:
                 # This should only happen if startup registration was broken or edited incorrectly.
                 response = "AMADEUS error: chat module is not registered."
-                trace_logger.add_event(
-                    "error",
-                    "Routing Error",
-                    "Core could not find the registered chat module.",
-                    level="error",
-                )
-                trace_logger.add_event(
-                    "output",
-                    "Output Ready",
-                    "Error response returned to GUI.",
-                    level="warning",
+                trace_logger.fail_run(
+                    title="Request Failed",
+                    summary="The request could not be completed.",
                 )
                 return self._build_response_payload(response, trace_logger)
 
-            trace_logger.add_event(
-                "module",
-                "Chat Module Route",
-                "Core routed the message to the chat module.",
-            )
-            trace_logger.add_event(
-                "module",
-                "Context Builder",
-                "Building recent conversation and project context for this message.",
-            )
-
             # Context Builder owns the decision about what history/files should enter the prompt.
             # This keeps prompt context policy out of Core and prevents Chat from reading files directly.
-            context_bundle = self.context_builder.build_for_message(clean_message)
-
-            if context_bundle.recent_conversation:
-                trace_logger.add_event(
-                    "system",
-                    "Conversation Context",
-                    "Recent chat history was loaded for continuity.",
-                    level="success",
-                )
-            else:
-                trace_logger.add_event(
-                    "system",
-                    "Conversation Context",
-                    "No recent chat history was available for this request.",
-                )
-
-            if context_bundle.project_context_active:
-                trace_logger.add_event(
-                    "file",
-                    "Project File Reader",
-                    "Project overview context was loaded because the message appears related to files/modules/project structure.",
-                    level="success",
-                )
-
-            if context_bundle.memory_context:
-                trace_logger.add_event(
-                    "module",
-                    "Memory Context",
-                    "Saved global/chat memory was injected into the chat prompt.",
-                    level="success",
-                )
-
-            if context_bundle.chat_workspace_context:
-                trace_logger.add_event(
-                    "system",
-                    "Chat Workspace Context",
-                    "Current chat title/description was injected into the chat prompt.",
-                    level="success",
-                )
+            context_bundle = self.context_builder.build_for_message(clean_message, trace_logger=trace_logger)
 
             # Identity is prepared at Core level so every normal chat starts from the same AMADEUS charter.
             # Project-related chats receive a stronger identity prompt because they affect AMADEUS herself.
             identity_prompt = self.identity_prompt_builder.build_for_chat(
                 project_context_active=context_bundle.project_context_active,
             )
-            if callable_context:
-                trace_logger.add_event(
-                    "file",
-                    "Selected File Context",
-                    "Attached explicit line-labelled selected-file context to this request only.",
-                    level="success",
-                )
-            trace_logger.add_event(
-                "module",
-                "Identity Module",
-                "Global AMADEUS identity prompt was prepared for chat.",
-                level="success",
-            )
-
             # Core routes the message but does not build prompt text or generate the response itself.
             response = chat_module.handle_message(  # type: ignore[attr-defined]
                 clean_message,
@@ -381,30 +314,26 @@ class AmadeusCore:
                 trace_logger=trace_logger,
             )
             self._persist_exchange(clean_message, response)
-            trace_logger.add_event(
-                "output",
-                "Output Ready",
-                "Response returned to GUI.",
-                level="success",
-            )
+            if trace_logger.has_failed_event():
+                trace_logger.fail_run(
+                    title="Request Failed",
+                    summary="The request could not be completed.",
+                )
+            else:
+                trace_logger.complete_run(
+                    title="Response Returned",
+                    summary="Response returned to GUI.",
+                )
             return self._build_response_payload(response, trace_logger)
 
         except Exception as error:
             # Last-resort safety: the GUI should get an answer-shaped error instead of crashing.
             # The trace receives the error too, so Dato can see which stage failed.
-            trace_logger.add_event(
-                "error",
-                "Unhandled Error",
-                f"Core caught an unexpected error: {error}",
-                level="error",
+            trace_logger.fail_run(
+                title="Request Failed",
+                summary="The request could not be completed.",
             )
             response = f"AMADEUS error: {error}"
-            trace_logger.add_event(
-                "output",
-                "Output Ready",
-                "Error response returned to GUI.",
-                level="warning",
-            )
             return self._build_response_payload(response, trace_logger)
 
 

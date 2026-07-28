@@ -5,7 +5,7 @@
 - Add stronger typed response objects instead of plain dictionaries.
 - Add clearer module health checks at startup.
 - Add safer fallback behavior when optional modules fail.
-- Add richer trace metadata for routing decisions.
+- Add richer safe trace metadata for routing decisions without including request text.
 - Add tests around routing order so exact file requests stay annotation-only and do not fall through to normal LLM chat.
 - Add typed chat-management results/errors instead of generic exceptions.
 

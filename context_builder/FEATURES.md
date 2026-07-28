@@ -28,3 +28,8 @@ Context Builder selects context; it does not answer the user directly, switch ch
 - Injects active chat title/description into normal chat prompts.
 - Keeps chat workspace context separate from global memory, chat memory, recent conversation, and project overview.
 - Recent conversation context now includes visible message numbers, preparing future `[current]` annotations.
+
+## Shared Process Events
+
+- `build_for_message()` accepts an optional `TraceLogger` and reports genuine context start/completion boundaries.
+- Completion reports only selected context type names (`recent_conversation`, `project_overview`, `memory`, and `chat_workspace`), never context values.

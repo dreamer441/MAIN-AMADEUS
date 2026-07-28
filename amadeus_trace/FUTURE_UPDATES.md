@@ -6,5 +6,9 @@
 - Add module-specific trace hooks for file reading, memory, mind map, permissions, and skills.
 - Add visual timeline mode.
 - Add Compact, Detailed, and Debug modes with richer formatting.
-- Add trace-event IDs and parent/child relationships if request flow becomes nested.
+- Add Process Monitor V2 timeline/filter presentation for shared process events.
+- Explore an Inner Brain presentation only if it can remain limited to real,
+  safe operational events rather than private reasoning.
+- Add persistent background-job process tracking when jobs have a defined
+  lifecycle and storage owner.
 - Keep trace comments strict: events must be real code events, never fake hidden thinking.

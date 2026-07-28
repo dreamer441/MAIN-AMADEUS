@@ -1,4 +1,4 @@
-"""Per-message trace session for AMADEUS.
+"""Legacy per-message trace session compatibility container for AMADEUS.
 
 One TraceSession equals one user request. Keeping sessions small and temporary makes
 the Process Monitor easy to understand: it shows what happened for the latest message,
@@ -13,11 +13,14 @@ from amadeus_trace.trace_event import TraceEvent
 
 @dataclass
 class TraceSession:
-    """Trace container for one user request.
+    """Legacy trace container retained for direct external consumers.
 
     A trace session is intentionally per-message, not global. This keeps the Process Monitor focused on
     what happened during the latest request and prevents old execution events from being confused with
     the current routing path.
+
+    New request code uses :class:`ProcessEventEmitter` through ``TraceLogger``.
+    This class remains available so direct legacy imports keep their prior API.
     """
 
     session_id: str = field(default_factory=lambda: uuid4().hex)

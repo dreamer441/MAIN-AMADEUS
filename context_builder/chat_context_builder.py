@@ -7,6 +7,7 @@ files/storage/memory directly.
 
 from dataclasses import dataclass
 
+from amadeus_trace import TraceLogger
 from memory_module import MemoryService
 from project_file_reader import ProjectFileReader
 from storage import ChatHistoryStore
@@ -67,15 +68,39 @@ class ChatContextBuilder:
         self.recent_message_limit = recent_message_limit
         self.max_history_characters = max_history_characters
 
-    def build_for_message(self, message: str) -> ChatContextBundle:
+    def build_for_message(self, message: str, trace_logger: TraceLogger | None = None) -> ChatContextBundle:
         """Build the context bundle for the current user message."""
+        if trace_logger is not None:
+            trace_logger.add_event(
+                "module",
+                "Context Building",
+                "Selecting applicable context for normal chat.",
+            )
         current_chat_id = self.chat_history_store.get_current_chat_id()
-        return ChatContextBundle(
+        context_bundle = ChatContextBundle(
             recent_conversation=self._build_recent_conversation_context(),
             project_context=self._build_project_context_if_relevant(message),
             memory_context=self._build_memory_context(current_chat_id),
             chat_workspace_context=self._build_chat_workspace_context(current_chat_id),
         )
+        if trace_logger is not None:
+            selected_types = []
+            if context_bundle.recent_conversation:
+                selected_types.append("recent_conversation")
+            if context_bundle.project_context:
+                selected_types.append("project_overview")
+            if context_bundle.memory_context:
+                selected_types.append("memory")
+            if context_bundle.chat_workspace_context:
+                selected_types.append("chat_workspace")
+            selected_summary = ", ".join(selected_types) if selected_types else "none"
+            trace_logger.add_event(
+                "module",
+                "Context Ready",
+                f"Selected context types: {selected_summary}.",
+                level="success",
+            )
+        return context_bundle
 
     def _build_recent_conversation_context(self) -> str | None:
         """Return recent persisted messages for conversational continuity."""
