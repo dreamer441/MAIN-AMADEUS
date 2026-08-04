@@ -5,7 +5,12 @@ import unittest
 from pathlib import Path
 
 from amadeus_core.core import AmadeusCore
-from project_file_reader import ProjectFileReader, UnsafeProjectFileError
+from project_file_reader import (
+    ProjectFileNotFoundError,
+    ProjectFileReader,
+    ProjectModuleNotFoundError,
+    UnsafeProjectFileError,
+)
 from project_file_reader.project_file_reader import MAX_FILE_SIZE_BYTES
 
 
@@ -24,6 +29,15 @@ class ProjectFileReaderTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
+
+    def _create_module(self, name: str, features: str, future: str) -> Path:
+        """Create one documented module folder for metadata-reader tests."""
+        module = self.root / name
+        module.mkdir()
+        (module / "README.md").write_text("# Module\n", encoding="utf-8")
+        (module / "FEATURES.md").write_text(features, encoding="utf-8")
+        (module / "FUTURE_UPDATES.md").write_text(future, encoding="utf-8")
+        return module
 
     def test_tree_and_file_metadata_are_project_root_relative(self) -> None:
         tree = self.reader.list_project_directory()
@@ -54,6 +68,57 @@ class ProjectFileReaderTests(unittest.TestCase):
 
         self.assertEqual(root_content.content, module_content.content)
         self.assertEqual(root_content.total_characters, module_content.total_characters)
+
+    def test_reads_only_requested_metadata_in_stable_order(self) -> None:
+        self._create_module("beta_module", features="beta features", future="beta future")
+        self._create_module("alpha_module", features="alpha features", future="alpha future")
+
+        result = ProjectFileReader(self.root).read_module_metadata(document_kind="both")
+
+        self.assertEqual(
+            [
+                ("alpha_module", "FEATURES.md"),
+                ("alpha_module", "FUTURE_UPDATES.md"),
+                ("beta_module", "FEATURES.md"),
+                ("beta_module", "FUTURE_UPDATES.md"),
+            ],
+            [(item.module_name, item.file_name) for item in result.documents],
+        )
+        self.assertEqual("alpha features", result.documents[0].content)
+
+    def test_rejects_unknown_document_kind_and_unverified_module(self) -> None:
+        self._create_module("safe_module", features="features", future="future")
+        reader = ProjectFileReader(self.root)
+
+        with self.assertRaises(ValueError):
+            reader.read_module_metadata(document_kind="README.md")
+        with self.assertRaises(ProjectModuleNotFoundError):
+            reader.read_module_metadata("missing_module")
+
+    def test_reports_document_removed_during_metadata_read(self) -> None:
+        module = self._create_module("safe_module", features="features", future="future")
+        reader = ProjectFileReader(self.root)
+        original_read = reader.read_module_file
+
+        def remove_future_before_read(module_name: str, file_name: str, max_characters: int):
+            if file_name == "FUTURE_UPDATES.md":
+                (module / file_name).unlink()
+            return original_read(module_name, file_name, max_characters)
+
+        reader.read_module_file = remove_future_before_read  # type: ignore[method-assign]
+
+        result = reader.read_module_metadata("safe_module")
+
+        self.assertEqual(["FEATURES.md"], [item.file_name for item in result.documents])
+        self.assertEqual(("safe_module/FUTURE_UPDATES.md",), result.missing)
+
+    def test_metadata_read_uses_one_aggregate_character_limit(self) -> None:
+        self._create_module("safe_module", features="abcdefghij", future="future")
+
+        result = ProjectFileReader(self.root).read_module_metadata("safe_module", max_characters=5)
+
+        self.assertTrue(result.truncated)
+        self.assertLessEqual(sum(len(item.content) for item in result.documents), 5)
 
 
 class SelectedFileContextTests(unittest.TestCase):

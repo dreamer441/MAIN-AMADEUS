@@ -37,6 +37,11 @@ READABLE_FILE_EXTENSIONS = {
 MAX_FILE_SIZE_BYTES = 2_000_000
 DEFAULT_MAX_CHARACTERS = 120_000
 TEXT_ENCODINGS = ("utf-8-sig", "utf-8", "cp1252", "latin-1")
+MODULE_METADATA_FILES = {
+    "features": ("FEATURES.md",),
+    "future": ("FUTURE_UPDATES.md",),
+    "both": ("FEATURES.md", "FUTURE_UPDATES.md"),
+}
 
 
 class ProjectModuleNotFoundError(ValueError):
@@ -197,6 +202,27 @@ class ModuleDocumentation:
     exact_files: ModuleFileListing
 
 
+@dataclass(frozen=True)
+class ModuleMetadataDocument:
+    """One exact fixed metadata document read from a verified module."""
+
+    module_name: str
+    file_name: str
+    content: str
+    total_characters: int
+    total_lines: int
+    truncated: bool
+
+
+@dataclass(frozen=True)
+class ModuleMetadataRead:
+    """Aggregate bounded metadata read for one or more verified modules."""
+
+    documents: tuple[ModuleMetadataDocument, ...]
+    missing: tuple[str, ...]
+    truncated: bool
+
+
 class ProjectFileReader:
     """Reads approved AMADEUS project files without editing or unsafe scanning."""
 
@@ -313,6 +339,62 @@ class ProjectFileReader:
             future_updates=self._clean_markdown(docs["FUTURE_UPDATES.md"]),
             python_files=[entry.name for entry in exact_files.files if entry.extension == ".py"],
             exact_files=exact_files,
+        )
+
+    def read_module_metadata(
+        self,
+        module_name: str = "",
+        document_kind: str = "both",
+        max_characters: int = DEFAULT_MAX_CHARACTERS,
+    ) -> ModuleMetadataRead:
+        """Read only fixed metadata documents within one aggregate character budget."""
+        normalized_kind = document_kind.strip().lower()
+        if normalized_kind not in MODULE_METADATA_FILES:
+            raise ValueError(f"Unsupported metadata document kind: {document_kind}")
+
+        requested_module = module_name.strip()
+        module_names = (
+            (self._resolve_module_path_or_raise(requested_module).name,)
+            if requested_module
+            else tuple(self.list_module_names())
+        )
+        documents: list[ModuleMetadataDocument] = []
+        missing: list[str] = []
+        remaining = max_characters
+        truncated = False
+
+        for verified_module_name in module_names:
+            for file_name in MODULE_METADATA_FILES[normalized_kind]:
+                if remaining <= 0:
+                    truncated = True
+                    break
+                try:
+                    content = self.read_module_file(verified_module_name, file_name, remaining)
+                except (FileNotFoundError, ProjectFileNotFoundError, ProjectModuleNotFoundError):
+                    missing.append(f"{verified_module_name}/{file_name}")
+                    continue
+
+                documents.append(
+                    ModuleMetadataDocument(
+                        module_name=content.module_name,
+                        file_name=content.file_name,
+                        content=content.content,
+                        total_characters=content.total_characters,
+                        total_lines=content.total_lines,
+                        truncated=content.truncated,
+                    )
+                )
+                remaining -= len(content.content)
+                if content.truncated:
+                    truncated = True
+                    break
+            if truncated:
+                break
+
+        return ModuleMetadataRead(
+            documents=tuple(documents),
+            missing=tuple(missing),
+            truncated=truncated,
         )
 
     def list_module_files(self, requested_name: str, recursive: bool = False) -> ModuleFileListing:
