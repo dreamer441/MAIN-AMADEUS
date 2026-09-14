@@ -26,3 +26,6 @@
 ## Core ownership cleanup — 2026-09-12
 
 - Keep future GUI operations on the Core Canvas facade and projection validation in Canvas; preserve local Canvas document schemas.
+## Code polish - 2026-09-14
+
+- Keep future drawing behavior in Canvas graphics items, editing forms in Canvas dialogs, and workspace coordination in the view. Preserve explicit Core routes and avoid importing the workspace view from its helpers.

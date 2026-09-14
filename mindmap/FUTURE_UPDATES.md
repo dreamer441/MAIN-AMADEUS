@@ -50,3 +50,6 @@
 ## Core ownership cleanup — 2026-09-12
 
 - Extend workspace source synchronization through workspace_integration public APIs rather than importing other module internals into Mind Map.
+## Code polish - 2026-09-14
+
+- Keep future form changes in the dialog owner and navigation/drawing behavior in the surface. Shared form helpers must preserve existing widget defaults and validation.

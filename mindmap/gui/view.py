@@ -6,21 +6,15 @@ import math
 from collections.abc import Callable
 from typing import Any
 
-from PyQt6.QtCore import QEventLoop, QLineF, QObject, QPointF, QRectF, Qt, QThread, QTimer, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QColor, QFont, QKeySequence, QPainter, QPen, QShortcut
+from PyQt6.QtCore import QEventLoop, QObject, Qt, QThread, QTimer, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
-    QCheckBox,
-    QComboBox,
     QDialog,
-    QDialogButtonBox,
-    QDoubleSpinBox,
     QFileDialog,
-    QFormLayout,
     QFrame,
     QGraphicsScene,
-    QGraphicsView,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -36,114 +30,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from mindmap.gui.dialogs import LINK_TYPES, NODE_TYPES, ChatImportDialog, LinkDialog, NodeDialog
+from mindmap.gui.surface import MindMapCanvas
 from mindmap.gui.items import GraphLinkItem, GraphNodeItem
 from mindmap.gui.physics import GraphPhysics
 from mindmap.models import GraphLink, GraphNode, GraphSnapshot
-
-
-NODE_TYPES = (
-    "idea",
-    "task",
-    "decision",
-    "feature",
-    "bug",
-    "reference",
-    "container",
-    "chat",
-    "sheet",
-    "comment",
-    "material",
-    "memory",
-    "custom",
-)
-
-LINK_TYPES = (
-    "related_to",
-    "contains",
-    "part_of",
-    "depends_on",
-    "supports",
-    "contradicts",
-    "derived_from",
-    "references",
-    "caused_by",
-    "solves",
-)
-
-
-class MindMapCanvas(QGraphicsView):
-    """Zoomable relevance canvas with a quiet grid and inline guidance."""
-
-    def __init__(self, scene: QGraphicsScene, parent: QWidget | None = None) -> None:
-        super().__init__(scene, parent)
-        self.setRenderHint(QPainter.RenderHint.Antialiasing)
-        self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
-        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
-        self.setSceneRect(QRectF(-5000, -5000, 10000, 10000))
-        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.BoundingRectViewportUpdate)
-        self.setCacheMode(QGraphicsView.CacheModeFlag.CacheBackground)
-        self.setOptimizationFlag(QGraphicsView.OptimizationFlag.DontSavePainterState, True)
-        self.setOptimizationFlag(QGraphicsView.OptimizationFlag.DontAdjustForAntialiasing, True)
-        self.setFrameShape(QFrame.Shape.NoFrame)
-
-    def set_fast_drag_mode(self, enabled: bool) -> None:
-        """Reduce repaint cost only while a node is actively being dragged."""
-        self.setRenderHint(QPainter.RenderHint.Antialiasing, not enabled)
-        mode = (
-            QGraphicsView.ViewportUpdateMode.MinimalViewportUpdate
-            if enabled
-            else QGraphicsView.ViewportUpdateMode.BoundingRectViewportUpdate
-        )
-        self.setViewportUpdateMode(mode)
-
-    def wheelEvent(self, event) -> None:  # noqa: N802 - Qt naming.
-        current = self.transform().m11()
-        factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
-        target = current * factor
-        if 0.18 <= target <= 4.0:
-            self.scale(factor, factor)
-
-    def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
-        painter.fillRect(rect, QColor("#090c10"))
-        scale = max(0.01, self.transform().m11())
-        grid = 48.0
-        if scale < 0.45:
-            grid *= 2
-        left = math.floor(rect.left() / grid) * grid
-        top = math.floor(rect.top() / grid) * grid
-        lines: list[QLineF] = []
-        x = left
-        while x < rect.right():
-            lines.append(QLineF(x, rect.top(), x, rect.bottom()))
-            x += grid
-        y = top
-        while y < rect.bottom():
-            lines.append(QLineF(rect.left(), y, rect.right(), y))
-            y += grid
-        painter.setPen(QPen(QColor(255, 255, 255, 11), 0))
-        if lines:
-            painter.drawLines(lines)
-        painter.setPen(QPen(QColor(84, 178, 220, 24), 0))
-        painter.drawLine(QPointF(0, rect.top()), QPointF(0, rect.bottom()))
-        painter.drawLine(QPointF(rect.left(), 0), QPointF(rect.right(), 0))
-
-    def drawForeground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
-        del rect
-        painter.save()
-        painter.resetTransform()
-        painter.setFont(QFont("Segoe UI", 8))
-        painter.setPen(QColor(188, 199, 211, 120))
-        painter.drawText(16, self.viewport().height() - 18, "Wheel: zoom  •  drag empty space: pan  •  double-click node: open source")
-        painter.restore()
-
-    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 - Qt naming.
-        item = self.itemAt(event.pos())
-        if isinstance(item, GraphNodeItem):
-            # The node item handles source opening. Keeping the canvas centred
-            # makes the result feel deliberate even for manual nodes.
-            self.centerOn(item)
-        super().mouseDoubleClickEvent(event)
 
 
 class MindMapWorker(QObject):
@@ -162,190 +53,6 @@ class MindMapWorker(QObject):
             self.finished.emit(self.operation())
         except Exception as error:
             self.failed.emit(str(error))
-
-
-class NodeDialog(QDialog):
-    """Collect the minimum meaningful node properties for V1."""
-
-    def __init__(self, parent: QWidget | None = None, node: GraphNode | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("Edit Node" if node else "Create Node")
-        self.setMinimumWidth(430)
-        layout = QVBoxLayout(self)
-        form = QFormLayout()
-
-        self.title_input = QLineEdit(node.title if node else "")
-        self.type_input = QComboBox()
-        self.type_input.setEditable(True)
-        self.type_input.addItems(NODE_TYPES)
-        self.type_input.setCurrentText(node.node_type if node else "idea")
-        if node is not None and node.source_reference is not None:
-            # A source-backed node's type identifies its owning AMADEUS module.
-            # Renaming a Sheet node to Memory here would not migrate the real
-            # object, so type conversion remains a future explicit workflow.
-            self.type_input.setEnabled(False)
-            self.type_input.setToolTip("Source-backed node types cannot be converted in-place yet.")
-        self.description_input = QTextEdit(node.description if node else "")
-        self.description_input.setMaximumHeight(100)
-        self.content_input = QTextEdit(node.content if node else "")
-        self.content_input.setMaximumHeight(120)
-        self.importance_input = self._unit_spin(node.importance if node else 0.5)
-        self.confidence_input = self._unit_spin(node.confidence if node else 1.0)
-        self.locked_input = QCheckBox()
-        self.locked_input.setChecked(node.position_locked if node else False)
-        self.workspace_object_input = QCheckBox("Create the matching real AMADEUS object")
-        self.workspace_object_input.setToolTip(
-            "For chat, sheet, comment, and memory types, create a real source-backed object instead of only a graph label."
-        )
-        self.workspace_object_input.setVisible(node is None)
-        self.type_input.currentTextChanged.connect(self._update_workspace_option)
-        self._update_workspace_option(self.type_input.currentText())
-
-        form.addRow("Title:", self.title_input)
-        form.addRow("Type:", self.type_input)
-        form.addRow("Description:", self.description_input)
-        form.addRow("Content:", self.content_input)
-        form.addRow("Importance:", self.importance_input)
-        form.addRow("Confidence:", self.confidence_input)
-        form.addRow("Lock position:", self.locked_input)
-        if node is None:
-            form.addRow("Workspace object:", self.workspace_object_input)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addLayout(form)
-        layout.addWidget(buttons)
-
-    def values(self) -> dict[str, Any]:
-        return {
-            "title": self.title_input.text().strip(),
-            "node_type": self.type_input.currentText().strip(),
-            "description": self.description_input.toPlainText().strip(),
-            "content": self.content_input.toPlainText().strip(),
-            "importance": self.importance_input.value(),
-            "confidence": self.confidence_input.value(),
-            "position_locked": self.locked_input.isChecked(),
-            "create_workspace_object": self.workspace_object_input.isChecked(),
-        }
-
-    def _update_workspace_option(self, node_type: str) -> None:
-        enabled = node_type.strip().lower() in {"chat", "sheet", "comment", "memory"}
-        self.workspace_object_input.setEnabled(enabled)
-        self.workspace_object_input.setChecked(enabled)
-        if enabled:
-            self.workspace_object_input.setText("Create the matching real AMADEUS object")
-        else:
-            self.workspace_object_input.setText("This type is graph-only")
-
-    def _unit_spin(self, value: float) -> QDoubleSpinBox:
-        spin = QDoubleSpinBox()
-        spin.setRange(0.0, 1.0)
-        spin.setDecimals(2)
-        spin.setSingleStep(0.05)
-        spin.setValue(value)
-        return spin
-
-
-class LinkDialog(QDialog):
-    """Collect first-class relationship properties."""
-
-    def __init__(self, parent: QWidget | None = None, link: GraphLink | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("Edit Link" if link else "Create Link")
-        self.setMinimumWidth(420)
-        layout = QVBoxLayout(self)
-        form = QFormLayout()
-
-        self.type_input = QComboBox()
-        self.type_input.setEditable(True)
-        self.type_input.addItems(LINK_TYPES)
-        self.type_input.setCurrentText(link.link_type if link else "related_to")
-        self.label_input = QLineEdit(link.label if link else "")
-        self.strength_input = self._unit_spin(link.strength if link else 0.5)
-        self.confidence_input = self._unit_spin(link.confidence if link else 1.0)
-        self.permanence_input = self._unit_spin(link.permanence if link else 0.5)
-        self.evidence_input = QTextEdit(link.evidence if link else "")
-        self.evidence_input.setMaximumHeight(100)
-        self.temporary_input = QCheckBox()
-        self.temporary_input.setChecked(link.is_temporary if link else False)
-        self._existing_metadata = dict(link.metadata) if link else {}
-        self.inject_into_chat_input = QCheckBox("Automatically include this linked node in chat context")
-        self.inject_into_chat_input.setChecked(self._existing_metadata.get("inject_into_chat", True) is not False)
-
-        form.addRow("Relationship:", self.type_input)
-        form.addRow("Visible label:", self.label_input)
-        form.addRow("Strength:", self.strength_input)
-        form.addRow("Confidence:", self.confidence_input)
-        form.addRow("Permanence:", self.permanence_input)
-        form.addRow("Evidence:", self.evidence_input)
-        form.addRow("Temporary:", self.temporary_input)
-        form.addRow("Chat context:", self.inject_into_chat_input)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addLayout(form)
-        layout.addWidget(buttons)
-
-    def values(self) -> dict[str, Any]:
-        return {
-            "link_type": self.type_input.currentText().strip(),
-            "label": self.label_input.text().strip(),
-            "strength": self.strength_input.value(),
-            "confidence": self.confidence_input.value(),
-            "permanence": self.permanence_input.value(),
-            "evidence": self.evidence_input.toPlainText().strip(),
-            "is_temporary": self.temporary_input.isChecked(),
-            "metadata": {
-                **self._existing_metadata,
-                "inject_into_chat": self.inject_into_chat_input.isChecked(),
-            },
-        }
-
-    def _unit_spin(self, value: float) -> QDoubleSpinBox:
-        spin = QDoubleSpinBox()
-        spin.setRange(0.0, 1.0)
-        spin.setDecimals(2)
-        spin.setSingleStep(0.05)
-        spin.setValue(value)
-        return spin
-
-
-class ChatImportDialog(QDialog):
-    """Choose dedicated chats to project into the Mind Map through Core."""
-
-    def __init__(self, chats: list[object], parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("Import AMADEUS Chats")
-        self.resize(520, 430)
-        layout = QVBoxLayout(self)
-        intro = QLabel(
-            "Choose chats to represent as source-backed Mind Map nodes. "
-            "Importing again updates metadata without creating duplicates."
-        )
-        intro.setWordWrap(True)
-        layout.addWidget(intro)
-        self.chat_list = QListWidget()
-        self.chat_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        for chat in chats:
-            title = str(getattr(chat, "title", "Untitled Chat"))
-            description = str(getattr(chat, "description", "")).strip()
-            purpose = str(getattr(chat, "purpose", "General"))
-            item = QListWidgetItem(f"{title}  ·  {purpose}")
-            item.setToolTip(description or "No chat description")
-            item.setData(Qt.ItemDataRole.UserRole, chat)
-            self.chat_list.addItem(item)
-            item.setSelected(True)
-        layout.addWidget(self.chat_list, 1)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Import Selected")
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-    def selected_chats(self) -> list[object]:
-        return [item.data(Qt.ItemDataRole.UserRole) for item in self.chat_list.selectedItems()]
 
 
 class MindMapView(QWidget):

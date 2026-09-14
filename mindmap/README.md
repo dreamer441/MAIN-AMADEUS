@@ -55,7 +55,9 @@ Graph-change subscriptions remain invalidation notices containing identifiers on
 - `mind_map_module.py` — stable public facade.
 - `gui/physics.py` — transient living graph projection.
 - `gui/items.py` — node/link presentation and interaction.
-- `gui/view.py` — complete Mind Map workspace using Core only.
+- `gui/dialogs.py` — node/link editors and chat-import selection, including shared unit-interval controls.
+- `gui/surface.py` — canvas zoom, background grid, and pointer navigation.
+- `gui/view.py` — Mind Map workspace orchestration using Core only; preserves existing dialog, surface, and type-constant imports.
 
 ## Boundaries for future intelligence
 

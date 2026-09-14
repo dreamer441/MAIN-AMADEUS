@@ -65,3 +65,7 @@ Canvas now supports multiple lightweight project workspaces and the first real s
 ## Core ownership cleanup — 2026-09-12
 
 - Canvas GUI operations use the explicit core.canvas facade. Workspace integration updates the managed Mind Map projection through the validated replace_mindmap_projection public API.
+## Code polish - 2026-09-14
+
+- Canvas presentation is organized into owner-local dialogs, graphics items and a surface, with the workspace view retaining coordination. Existing view imports remain available.
+- Context role ordering uses one shared assignment loop while preserving selection, priority, distance tie-breakers and token budgets.

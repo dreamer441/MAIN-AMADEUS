@@ -280,36 +280,20 @@ class CanvasContextBuilder:
         support_connector_ids.update(target_connector_ids)
 
         role_priority: dict[str, tuple[int, int, float, float, str]] = {}
-        for object_id in target_object_ids:
-            block = block_by_id[object_id]
-            role_priority[object_id] = (0, 0, block.position_y, block.position_x, object_id)
-        for object_id in ancestors:
-            block = block_by_id[object_id]
-            role_priority[object_id] = (
-                1,
-                ancestor_distance.get(object_id, ancestor_depth + 1),
-                block.position_y,
-                block.position_x,
-                object_id,
-            )
-        for object_id in descendants:
-            block = block_by_id[object_id]
-            role_priority[object_id] = (
-                2,
-                descendant_distance.get(object_id, descendant_depth + 1),
-                block.position_y,
-                block.position_x,
-                object_id,
-            )
-        for object_id in peers:
-            block = block_by_id[object_id]
-            role_priority[object_id] = (
-                3,
-                peer_distance.get(object_id, peer_depth + 1),
-                block.position_y,
-                block.position_x,
-                object_id,
-            )
+        # Keep role precedence and tie-breakers together so each context role
+        # follows the same stable ordering contract.
+        for priority, object_ids, distances, fallback in (
+            (0, target_object_ids, {}, 0),
+            (1, ancestors, ancestor_distance, ancestor_depth + 1),
+            (2, descendants, descendant_distance, descendant_depth + 1),
+            (3, peers, peer_distance, peer_depth + 1),
+        ):
+            for object_id in object_ids:
+                block = block_by_id[object_id]
+                role_priority[object_id] = (
+                    priority, distances.get(object_id, fallback),
+                    block.position_y, block.position_x, object_id,
+                )
 
         ordered_ids = sorted(role_priority, key=role_priority.__getitem__)
         included_ids: list[str] = []

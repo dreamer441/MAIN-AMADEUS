@@ -87,3 +87,6 @@
 ## Core ownership cleanup — 2026-09-12
 
 - Cross-module source synchronization is owned by workspace_integration; mindmap.integrations remains a compatibility import. Graph operations and persistence stay in Mind Map.
+## Code polish - 2026-09-14
+
+- Node/link/import dialogs and the canvas surface have focused GUI components inside Mind Map. Existing view imports remain compatible; graph operations still route through Core.

@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-09-15 - Behavior Preserving Code Polish
+
+- Date: 2026-09-15 (implementation began 2026-09-14).
+- Phase: Maintenance after the Core ownership cleanup.
+- Feature or fix: Separate large presentation files and remove local duplication without adding features.
+- What changed: Moved Canvas dialogs/editors, graphics items, surface and shared geometry constants into focused files within `canvas_module/gui`. Moved Mind Map dialogs and surface into focused files within `mindmap/gui`; consolidated duplicate spin-box construction behind the existing instance methods. Simplified Canvas context-role priority assignment into one ordered loop. Preserved original view imports for extracted components.
+- Files/modules affected: Canvas GUI `view.py`, `dialogs.py`, `items.py`, `surface.py`, `constants.py`, Canvas `context.py`; Mind Map GUI `view.py`, `dialogs.py`, `surface.py`; both module READMEs, FEATURES and FUTURE_UPDATES; `docs/superpowers/plans/2026-09-14-code-polish.md` and this changelog.
+- User-visible behavior: Existing editing, drawing, selection, dialogs, context ordering, prompts, token budgets, approvals and data formats are preserved. Canvas view reduced from 2,235 to 1,261 lines; Mind Map view from 1,578 to 1,285 lines. Most code is relocated, not deleted.
+- Architecture notes: Presentation helpers remain inside their owning modules and never import their coordinating views. Core/service interfaces and storage ownership are unchanged. Equal class bodies were checked structurally against the prior commit; the only deliberate method-body changes are the documented helper delegation and context-loop simplification.
+- Tests performed: Canvas and workspace boundary tests passed (69); Mind Map and annotation tests passed (32). All 600 generated old/new Canvas context packages matched exactly. Python compileall passed. The full regression suite passed all 336 tests in 81.759 seconds. Final review results are recorded in the completed plan.
+- Known limitations: This is maintainability polish, not a measured speed improvement. Extracted classes now identify their defining helper module in Python introspection; historical class imports from the view still resolve to those same classes. Runtime monkeypatches of a helper's globals must target its defining module. Live interactive GUI checks were not performed. Push remains subject to the previously blocked remote-destination approval.
+
 ## 2026-09-14 - Core Ownership Cleanup
 
 - Date: 2026-09-14 (approved design and extraction began 2026-09-12).

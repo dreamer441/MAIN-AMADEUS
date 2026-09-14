@@ -18,6 +18,7 @@ The Canvas is a structured scene, not a flattened screenshot. Typed ideas and th
 - Schema v5 adds optional block titles, comments, and comment-perimeter positions while safely loading older Canvas schemas.
 - Saves use atomic file replacement so interrupted writes do not partially overwrite the active workspace.
 - `canvas_module.gui` owns rendering, worker-thread delivery, and explicit user interactions but does not write JSON directly.
+- GUI presentation helpers live in `gui/dialogs.py`, `gui/items.py`, and `gui/surface.py`, with shared defaults in `gui/constants.py`. `gui/view.py` coordinates the workspace and worker and preserves the existing helper imports.
 - GUI imports remain lazy so non-GUI Canvas code can be tested without PyQt.
 
 ## Workspace workflow
