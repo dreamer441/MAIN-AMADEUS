@@ -12,3 +12,7 @@
 - Exported chats are now the first concrete Materials objects.
 - Materials composes the Export module public API; export annotations and formats remain compatible.
 - Human display uses TXT-style formatting; Markdown and JSON files are stored for future AMADEUS reference/retrieval.
+
+## Core ownership cleanup — 2026-09-12
+
+- Implemented: MaterialsWorkspace owns Core-facing metadata, preview/open/copy/removal routes and explicitly selected conversation context.

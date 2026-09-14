@@ -16,3 +16,12 @@ class AnnotationResult:
 
     response: str
     side_panel: dict[str, Any] | None = None
+
+
+def unpack_annotation_output(annotation_output: object) -> tuple[str, dict | None]:
+    """Normalize handler output without running or storing a conversation."""
+    if isinstance(annotation_output, AnnotationResult):
+        return annotation_output.response, annotation_output.side_panel
+    if isinstance(annotation_output, str):
+        return annotation_output, None
+    return "AMADEUS annotation error: handler returned an unreadable result.", None

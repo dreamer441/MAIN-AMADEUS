@@ -10,3 +10,7 @@
 - Side Ask supports a manual context box in addition to selected chat text.
 - Selected chat text and manually pasted context are combined into one temporary callable context block.
 - The context block is explicitly labeled temporary so AMADEUS does not treat it as memory.
+
+## Core ownership cleanup — 2026-09-12
+
+- Implemented: SideAskWorkflow owns temporary question execution and explicit Save to Chat behavior previously implemented in Core.

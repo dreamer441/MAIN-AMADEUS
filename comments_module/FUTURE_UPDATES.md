@@ -5,6 +5,7 @@
 - [ ] Comment categories such as note, bug, decision, warning, idea.
 - [ ] Convert selected comments into Mind Map node/link evidence.
 - [ ] Search and filter comments.
+- [ ] Add a global-comments panel and explicit movement between global and chat scope.
 
 ## Comment Metadata Future Updates
 
@@ -12,3 +13,7 @@
 - [ ] Add colored message-number badges in the chat UI when comments exist.
 - [ ] Add neighboring-message context retrieval for comment targets.
 - [ ] Allow comments to become evidence for Mind Map nodes and links.
+
+## Mind Map synchronization follow-ups
+
+- Add exact message/source selection and comment-node creation controls inside Mind Map.

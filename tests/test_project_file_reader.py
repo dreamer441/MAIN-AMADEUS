@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from amadeus_core.core import AmadeusCore
+from project_file_reader.workspace import ProjectFileWorkspace
 from project_file_reader import (
     ProjectFileNotFoundError,
     ProjectFileReader,
@@ -12,6 +12,7 @@ from project_file_reader import (
     UnsafeProjectFileError,
 )
 from project_file_reader.project_file_reader import MAX_FILE_SIZE_BYTES
+from annotation_module.annotations.metadata_annotation import MetadataAnnotation
 
 
 class ProjectFileReaderTests(unittest.TestCase):
@@ -120,6 +121,41 @@ class ProjectFileReaderTests(unittest.TestCase):
         self.assertTrue(result.truncated)
         self.assertLessEqual(sum(len(item.content) for item in result.documents), 5)
 
+    def test_metadata_bound_includes_memory_labels_and_short_document_overhead(self) -> None:
+        for number in range(4):
+            self._create_module(f"module_{number}", features="x", future="y")
+
+        result = self.reader.read_module_metadata(
+            document_kind="features",
+            max_characters=100,
+            format_payload=MetadataAnnotation._format_content,
+        )
+
+        payload = MetadataAnnotation._format_content(result.documents, result.missing, result.truncated)
+        self.assertLessEqual(len(payload), 100)
+        self.assertTrue(result.truncated)
+
+    def test_metadata_bound_includes_missing_path_notices(self) -> None:
+        self._create_module("sample_module", features="x", future="y")
+        original_read = self.reader.read_module_file
+
+        def missing_metadata(module_name: str, file_name: str, max_characters: int):
+            if file_name == "FEATURES.md":
+                raise ProjectFileNotFoundError(file_name, [])
+            return original_read(module_name, file_name, max_characters)
+
+        self.reader.read_module_file = missing_metadata  # type: ignore[method-assign]
+        result = self.reader.read_module_metadata(
+            "sample_module",
+            max_characters=120,
+            format_payload=MetadataAnnotation._format_content,
+        )
+
+        payload = MetadataAnnotation._format_content(result.documents, result.missing, result.truncated)
+        self.assertLessEqual(len(payload), 120)
+        self.assertEqual(("sample_module/FEATURES.md",), result.missing)
+        self.assertTrue(result.truncated)
+
 
 class SelectedFileContextTests(unittest.TestCase):
     """Verify explicit file context is exact, line-labelled, and request-scoped."""
@@ -144,18 +180,16 @@ class SelectedFileContextTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / "selected.py").write_text("first\nsecond\n", encoding="utf-8")
-            core = object.__new__(AmadeusCore)
-            core.file_reader = ProjectFileReader(root)
             received_contexts: list[str | None] = []
 
             def capture(message: str, callable_context: str | None = None) -> dict[str, str]:
                 received_contexts.append(callable_context)
                 return {"response": message}
 
-            core.handle_user_message = capture  # type: ignore[method-assign]
+            workspace = ProjectFileWorkspace(file_reader=ProjectFileReader(root), handle_user_message=capture)
 
-            core.ask_about_project_file("selected.py", "visual only", False, "not a range")
-            core.ask_about_project_file("selected.py", "explain this", True, "2")
+            workspace.ask_about_project_file("selected.py", "visual only", False, "not a range")
+            workspace.ask_about_project_file("selected.py", "explain this", True, "2")
 
             self.assertEqual([None], received_contexts[:1])
             self.assertIn("2: second", received_contexts[1] or "")

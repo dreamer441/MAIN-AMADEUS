@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from amadeus_trace import TraceLogger
 from chat_registry import ChatMetadata, ChatRegistry
 from flow_chat.flow_chat_store import FlowChatMessage, FlowChatStore
+from flow_chat.review_context_builder import FlowReviewContextBuilder, FlowReviewRequest
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +19,7 @@ class FlowContextBundle:
 
     recent_flow_history: str | None
     dedicated_chat_metadata: str
+    review_context: str | None
 
 
 class FlowContextBuilder:
@@ -27,11 +29,13 @@ class FlowContextBuilder:
         self,
         flow_chat_store: FlowChatStore,
         chat_registry: ChatRegistry,
+        review_context_builder: FlowReviewContextBuilder | None = None,
         recent_message_limit: int = 18,
         max_history_characters: int = 4_000,
     ) -> None:
         self.flow_chat_store = flow_chat_store
         self.chat_registry = chat_registry
+        self.review_context_builder = review_context_builder
         self.recent_message_limit = recent_message_limit
         self.max_history_characters = max_history_characters
 
@@ -41,7 +45,6 @@ class FlowContextBuilder:
         ``message`` remains part of the public context-builder shape used by normal
         chat, though Flow V1 does not use it to select additional context.
         """
-        del message
         self._trace(trace_logger, "Flow Context Started", "Selecting Flow history and dedicated-chat metadata.")
         recent_flow_history = self._build_recent_flow_history()
         if recent_flow_history:
@@ -51,9 +54,17 @@ class FlowContextBuilder:
         metadata = self.chat_registry.get_relevant_chat_metadata()
         self._trace(trace_logger, "Dedicated Chat Registry Loaded", "Dedicated-chat metadata loaded without chat message bodies.", level="success")
 
+        review_context = None
+        request = FlowReviewRequest.parse(message)
+        if request is not None and self.review_context_builder is not None:
+            self._trace(trace_logger, "Flow Review Context Started", "Preparing read-only review context.")
+            review_context = self.review_context_builder.build(request)
+            self._trace(trace_logger, "Flow Review Context Ready", "Read-only review context is ready.", level="success")
+
         context_bundle = FlowContextBundle(
             recent_flow_history=recent_flow_history,
             dedicated_chat_metadata=self._format_dedicated_chat_metadata(metadata),
+            review_context=review_context,
         )
         self._trace(trace_logger, "Flow Context Complete", "Flow history and dedicated-chat metadata context are ready.", level="success")
         return context_bundle

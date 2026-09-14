@@ -14,13 +14,17 @@ class CommentService:
     def __init__(self, project_root: Path) -> None:
         self.store = CommentStore(project_root)
 
-    def add_comment(self, chat_id: str, comment: str, selected_text: str = "") -> CommentEntry:
-        """Save one note against selected text in the current chat."""
-        return self.store.add_comment(chat_id=chat_id, comment=comment, selected_text=selected_text)
+    def add_comment(self, chat_id: str | None, comment: str, selected_text: str = "", scope: str | None = None) -> CommentEntry:
+        """Save one global or chat-scoped note."""
+        return self.store.add_comment(chat_id=chat_id, comment=comment, selected_text=selected_text, scope=scope)
 
     def list_for_chat(self, chat_id: str) -> list[CommentEntry]:
         """Return comments for the current chat."""
         return self.store.list_for_chat(chat_id)
+
+    def list_global(self) -> list[CommentEntry]:
+        """Return comments that are not linked to a dedicated chat."""
+        return self.store.list_global()
 
     def get_comment(self, comment_id: str) -> CommentEntry | None:
         """Return one comment record for a UI selection."""

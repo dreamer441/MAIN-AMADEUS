@@ -55,3 +55,13 @@ For file/folder/content questions, AMADEUS must answer from Project File Reader 
 - Rejects traversal, ignored directories, unsupported types, and files over the 2,000,000-byte inspection limit.
 - Existing module APIs used by `[file]` delegate to the same guarded root reader used by GUI navigation.
 - Builds exact one-based line-labelled context for an explicitly selected full file or validated `15` / `15-30` range.
+
+## Module Metadata Reading
+
+- Reads only the fixed `FEATURES.md` and `FUTURE_UPDATES.md` files from verified top-level modules; it never accepts an arbitrary metadata path or filename.
+- Supports one verified module or all indexed modules, in deterministic module and document order.
+- Aggregates metadata under a fixed character budget, reports missing fixed documents, and marks truncated output without editing or persisting source documents.
+
+## Core ownership cleanup — 2026-09-12
+
+- Implemented: ProjectFileWorkspace owns Code Viewer payloads and selected-file question context; Core delegates. Exact reads remain validated by ProjectFileReader.

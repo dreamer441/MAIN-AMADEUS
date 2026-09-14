@@ -6,9 +6,11 @@ import math
 from collections.abc import Callable
 from typing import Any
 
-from PyQt6.QtCore import QEventLoop, QObject, QRectF, Qt, QThread, QTimer, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QPainter
+from PyQt6.QtCore import QEventLoop, QLineF, QObject, QPointF, QRectF, Qt, QThread, QTimer, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QColor, QFont, QKeySequence, QPainter, QPen, QShortcut
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -27,6 +29,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QSplitter,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -48,6 +51,7 @@ NODE_TYPES = (
     "container",
     "chat",
     "sheet",
+    "comment",
     "material",
     "memory",
     "custom",
@@ -68,7 +72,7 @@ LINK_TYPES = (
 
 
 class MindMapCanvas(QGraphicsView):
-    """Zoomable canvas that keeps graph rendering independent from storage."""
+    """Zoomable relevance canvas with a quiet grid and inline guidance."""
 
     def __init__(self, scene: QGraphicsScene, parent: QWidget | None = None) -> None:
         super().__init__(scene, parent)
@@ -77,14 +81,67 @@ class MindMapCanvas(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
         self.setSceneRect(QRectF(-5000, -5000, 10000, 10000))
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.BoundingRectViewportUpdate)
+        self.setCacheMode(QGraphicsView.CacheModeFlag.CacheBackground)
+        self.setOptimizationFlag(QGraphicsView.OptimizationFlag.DontSavePainterState, True)
+        self.setOptimizationFlag(QGraphicsView.OptimizationFlag.DontAdjustForAntialiasing, True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+
+    def set_fast_drag_mode(self, enabled: bool) -> None:
+        """Reduce repaint cost only while a node is actively being dragged."""
+        self.setRenderHint(QPainter.RenderHint.Antialiasing, not enabled)
+        mode = (
+            QGraphicsView.ViewportUpdateMode.MinimalViewportUpdate
+            if enabled
+            else QGraphicsView.ViewportUpdateMode.BoundingRectViewportUpdate
+        )
+        self.setViewportUpdateMode(mode)
 
     def wheelEvent(self, event) -> None:  # noqa: N802 - Qt naming.
+        current = self.transform().m11()
         factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
-        self.scale(factor, factor)
+        target = current * factor
+        if 0.18 <= target <= 4.0:
+            self.scale(factor, factor)
+
+    def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
+        painter.fillRect(rect, QColor("#090c10"))
+        scale = max(0.01, self.transform().m11())
+        grid = 48.0
+        if scale < 0.45:
+            grid *= 2
+        left = math.floor(rect.left() / grid) * grid
+        top = math.floor(rect.top() / grid) * grid
+        lines: list[QLineF] = []
+        x = left
+        while x < rect.right():
+            lines.append(QLineF(x, rect.top(), x, rect.bottom()))
+            x += grid
+        y = top
+        while y < rect.bottom():
+            lines.append(QLineF(rect.left(), y, rect.right(), y))
+            y += grid
+        painter.setPen(QPen(QColor(255, 255, 255, 11), 0))
+        if lines:
+            painter.drawLines(lines)
+        painter.setPen(QPen(QColor(84, 178, 220, 24), 0))
+        painter.drawLine(QPointF(0, rect.top()), QPointF(0, rect.bottom()))
+        painter.drawLine(QPointF(rect.left(), 0), QPointF(rect.right(), 0))
+
+    def drawForeground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
+        del rect
+        painter.save()
+        painter.resetTransform()
+        painter.setFont(QFont("Segoe UI", 8))
+        painter.setPen(QColor(188, 199, 211, 120))
+        painter.drawText(16, self.viewport().height() - 18, "Wheel: zoom  •  drag empty space: pan  •  double-click node: open source")
+        painter.restore()
 
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 - Qt naming.
         item = self.itemAt(event.pos())
         if isinstance(item, GraphNodeItem):
+            # The node item handles source opening. Keeping the canvas centred
+            # makes the result feel deliberate even for manual nodes.
             self.centerOn(item)
         super().mouseDoubleClickEvent(event)
 
@@ -122,6 +179,12 @@ class NodeDialog(QDialog):
         self.type_input.setEditable(True)
         self.type_input.addItems(NODE_TYPES)
         self.type_input.setCurrentText(node.node_type if node else "idea")
+        if node is not None and node.source_reference is not None:
+            # A source-backed node's type identifies its owning AMADEUS module.
+            # Renaming a Sheet node to Memory here would not migrate the real
+            # object, so type conversion remains a future explicit workflow.
+            self.type_input.setEnabled(False)
+            self.type_input.setToolTip("Source-backed node types cannot be converted in-place yet.")
         self.description_input = QTextEdit(node.description if node else "")
         self.description_input.setMaximumHeight(100)
         self.content_input = QTextEdit(node.content if node else "")
@@ -130,6 +193,13 @@ class NodeDialog(QDialog):
         self.confidence_input = self._unit_spin(node.confidence if node else 1.0)
         self.locked_input = QCheckBox()
         self.locked_input.setChecked(node.position_locked if node else False)
+        self.workspace_object_input = QCheckBox("Create the matching real AMADEUS object")
+        self.workspace_object_input.setToolTip(
+            "For chat, sheet, comment, and memory types, create a real source-backed object instead of only a graph label."
+        )
+        self.workspace_object_input.setVisible(node is None)
+        self.type_input.currentTextChanged.connect(self._update_workspace_option)
+        self._update_workspace_option(self.type_input.currentText())
 
         form.addRow("Title:", self.title_input)
         form.addRow("Type:", self.type_input)
@@ -138,6 +208,8 @@ class NodeDialog(QDialog):
         form.addRow("Importance:", self.importance_input)
         form.addRow("Confidence:", self.confidence_input)
         form.addRow("Lock position:", self.locked_input)
+        if node is None:
+            form.addRow("Workspace object:", self.workspace_object_input)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
@@ -154,7 +226,17 @@ class NodeDialog(QDialog):
             "importance": self.importance_input.value(),
             "confidence": self.confidence_input.value(),
             "position_locked": self.locked_input.isChecked(),
+            "create_workspace_object": self.workspace_object_input.isChecked(),
         }
+
+    def _update_workspace_option(self, node_type: str) -> None:
+        enabled = node_type.strip().lower() in {"chat", "sheet", "comment", "memory"}
+        self.workspace_object_input.setEnabled(enabled)
+        self.workspace_object_input.setChecked(enabled)
+        if enabled:
+            self.workspace_object_input.setText("Create the matching real AMADEUS object")
+        else:
+            self.workspace_object_input.setText("This type is graph-only")
 
     def _unit_spin(self, value: float) -> QDoubleSpinBox:
         spin = QDoubleSpinBox()
@@ -187,6 +269,9 @@ class LinkDialog(QDialog):
         self.evidence_input.setMaximumHeight(100)
         self.temporary_input = QCheckBox()
         self.temporary_input.setChecked(link.is_temporary if link else False)
+        self._existing_metadata = dict(link.metadata) if link else {}
+        self.inject_into_chat_input = QCheckBox("Automatically include this linked node in chat context")
+        self.inject_into_chat_input.setChecked(self._existing_metadata.get("inject_into_chat", True) is not False)
 
         form.addRow("Relationship:", self.type_input)
         form.addRow("Visible label:", self.label_input)
@@ -195,6 +280,7 @@ class LinkDialog(QDialog):
         form.addRow("Permanence:", self.permanence_input)
         form.addRow("Evidence:", self.evidence_input)
         form.addRow("Temporary:", self.temporary_input)
+        form.addRow("Chat context:", self.inject_into_chat_input)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
@@ -211,6 +297,10 @@ class LinkDialog(QDialog):
             "permanence": self.permanence_input.value(),
             "evidence": self.evidence_input.toPlainText().strip(),
             "is_temporary": self.temporary_input.isChecked(),
+            "metadata": {
+                **self._existing_metadata,
+                "inject_into_chat": self.inject_into_chat_input.isChecked(),
+            },
         }
 
     def _unit_spin(self, value: float) -> QDoubleSpinBox:
@@ -220,6 +310,42 @@ class LinkDialog(QDialog):
         spin.setSingleStep(0.05)
         spin.setValue(value)
         return spin
+
+
+class ChatImportDialog(QDialog):
+    """Choose dedicated chats to project into the Mind Map through Core."""
+
+    def __init__(self, chats: list[object], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Import AMADEUS Chats")
+        self.resize(520, 430)
+        layout = QVBoxLayout(self)
+        intro = QLabel(
+            "Choose chats to represent as source-backed Mind Map nodes. "
+            "Importing again updates metadata without creating duplicates."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+        self.chat_list = QListWidget()
+        self.chat_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        for chat in chats:
+            title = str(getattr(chat, "title", "Untitled Chat"))
+            description = str(getattr(chat, "description", "")).strip()
+            purpose = str(getattr(chat, "purpose", "General"))
+            item = QListWidgetItem(f"{title}  ·  {purpose}")
+            item.setToolTip(description or "No chat description")
+            item.setData(Qt.ItemDataRole.UserRole, chat)
+            self.chat_list.addItem(item)
+            item.setSelected(True)
+        layout.addWidget(self.chat_list, 1)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Import Selected")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def selected_chats(self) -> list[object]:
+        return [item.data(Qt.ItemDataRole.UserRole) for item in self.chat_list.selectedItems()]
 
 
 class MindMapView(QWidget):
@@ -236,6 +362,7 @@ class MindMapView(QWidget):
     worker_succeeded = pyqtSignal(object, object)
     worker_failed = pyqtSignal(str, str)
     worker_finished = pyqtSignal(object, object)
+    source_open_requested = pyqtSignal(str, str, str)
 
     def __init__(self, core: object, parent: QWidget | None = None, *, refresh_on_init: bool = True) -> None:
         super().__init__(parent)
@@ -256,12 +383,19 @@ class MindMapView(QWidget):
         self._busy = False
         self._refresh_pending = False
         self._after_refresh: list[Callable[[], None]] = []
+        self._resume_physics_after_refresh = False
         self._active_threads: list[QThread] = []
         self._active_workers: list[MindMapWorker] = []
         self._unsubscribe_graph_notifications: Callable[[], None] | None = None
 
         self._build_ui()
         self.scene.selectionChanged.connect(self._show_selection)
+        self._delete_shortcut = QShortcut(QKeySequence.StandardKey.Delete, self)
+        self._delete_shortcut.activated.connect(self._delete_selected)
+        self._focus_shortcut = QShortcut(QKeySequence("F"), self)
+        self._focus_shortcut.activated.connect(self._focus_selected)
+        self._fit_shortcut = QShortcut(QKeySequence("Ctrl+0"), self)
+        self._fit_shortcut.activated.connect(self._fit_graph)
         self.graph_changed.connect(lambda _event: self.refresh_graph())
         self.worker_succeeded.connect(self._dispatch_worker_success)
         self.worker_failed.connect(self._handle_worker_failure)
@@ -277,41 +411,93 @@ class MindMapView(QWidget):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setSpacing(12)
+        root.setContentsMargins(16, 14, 16, 12)
+        root.setSpacing(10)
+
+        heading_row = QHBoxLayout()
+        heading_column = QVBoxLayout()
+        heading_column.setSpacing(2)
         title = QLabel("AMADEUS Mind Map")
         title.setObjectName("MindMapTitle")
-        subtitle = QLabel(
-            "This space shows AMADEUS chats, memories, features, tasks, bugs, sheets, materials, and links."
-        )
+        subtitle = QLabel("A living relevance space for chats, ideas, decisions, tasks, materials, memories, and evidence.")
         subtitle.setObjectName("MindMapSubtitle")
         subtitle.setWordWrap(True)
+        heading_column.addWidget(title)
+        heading_column.addWidget(subtitle)
+        heading_row.addLayout(heading_column, 1)
 
-        panels = QHBoxLayout()
-        panels.setSpacing(12)
-        left_panel = self._create_panel("Mind Map")
+        self.quick_new_button = QPushButton("+ Node")
+        self.quick_new_button.setObjectName("PrimaryMindMapButton")
+        self.quick_new_button.clicked.connect(self._create_node)
+        self.quick_edit_button = QPushButton("Edit Node")
+        self.quick_edit_button.clicked.connect(self._edit_selected)
+        self.quick_edit_button.setEnabled(False)
+        self.quick_import_chat_button = QPushButton("Import Chats")
+        self.quick_import_chat_button.clicked.connect(self._import_chats)
+        self.quick_fit_button = QPushButton("Fit")
+        self.quick_fit_button.clicked.connect(self._fit_graph)
+        heading_row.addWidget(self.quick_import_chat_button)
+        heading_row.addWidget(self.quick_new_button)
+        heading_row.addWidget(self.quick_edit_button)
+        heading_row.addWidget(self.quick_fit_button)
+
+        self.workspace_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.workspace_splitter.setChildrenCollapsible(True)
+        self.workspace_splitter.setHandleWidth(7)
+
+        left_panel = self._create_panel("Explore")
         left_panel.layout().addWidget(self._build_left_panel())
-        center_panel = self._create_panel("Graph Space")
-        center_panel.layout().addWidget(self.canvas, 1)
-        right_panel = self._create_panel("Context / Node Details")
-        right_panel.layout().addWidget(self._build_properties_panel())
-        panels.addWidget(left_panel, 1)
-        panels.addWidget(center_panel, 3)
-        panels.addWidget(right_panel, 2)
 
+        center_panel = self._create_panel("Graph")
+        graph_toolbar = QHBoxLayout()
+        graph_toolbar.setSpacing(6)
+        self.graph_hint = QLabel("Select a node to reveal its local neighborhood")
+        self.graph_hint.setObjectName("GraphHint")
+        graph_toolbar.addWidget(self.graph_hint, 1)
+        layout_button = QPushButton("Settle")
+        layout_button.clicked.connect(self._auto_layout)
+        graph_toolbar.addWidget(layout_button)
+        center_panel.layout().addLayout(graph_toolbar)
+        center_panel.layout().addWidget(self.canvas, 1)
+
+        right_panel = self._create_panel("Context")
+        right_panel.layout().addWidget(self._build_properties_panel())
+
+        self.workspace_splitter.addWidget(left_panel)
+        self.workspace_splitter.addWidget(center_panel)
+        self.workspace_splitter.addWidget(right_panel)
+        self.workspace_splitter.setStretchFactor(0, 0)
+        self.workspace_splitter.setStretchFactor(1, 1)
+        self.workspace_splitter.setStretchFactor(2, 0)
+        self.workspace_splitter.setSizes([250, 760, 340])
+
+        status_row = QHBoxLayout()
         self.status_label = QLabel("Ready.")
         self.status_label.setObjectName("MindMapStatus")
-        self._busy_widgets = (*self.action_buttons.values(), self.search_input, self.search_button)
-        root.addWidget(title)
-        root.addWidget(subtitle)
-        root.addLayout(panels, 1)
-        root.addWidget(self.status_label)
+        self.selection_label = QLabel("No selection")
+        self.selection_label.setObjectName("MindMapSelectionStatus")
+        status_row.addWidget(self.status_label, 1)
+        status_row.addWidget(self.selection_label)
+
+        self._busy_widgets = (
+            *self.action_buttons.values(),
+            self.search_input,
+            self.search_button,
+            self.quick_new_button,
+            self.quick_import_chat_button,
+            self.quick_fit_button,
+            layout_button,
+        )
+        root.addLayout(heading_row)
+        root.addWidget(self.workspace_splitter, 1)
+        root.addLayout(status_row)
         self._apply_styles()
 
     def _create_panel(self, title: str) -> QFrame:
-        """Create one legacy-compatible framed workspace panel."""
         panel = QFrame()
         panel.setObjectName("MindMapPanel")
         layout = QVBoxLayout(panel)
+        layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
         header = QLabel(title)
         header.setObjectName("PanelHeader")
@@ -319,66 +505,95 @@ class MindMapView(QWidget):
         return panel
 
     def _apply_styles(self) -> None:
-        """Apply the legacy Mind Map palette without changing application-wide styling."""
+        """Keep the graph visually distinct without changing the whole application."""
         self.setStyleSheet(
             """
-            QWidget { background-color: #050505; color: #f2f2f2; }
-            QLabel#MindMapTitle { font-family: Segoe UI; font-size: 26px; font-weight: 800; color: #ffffff; }
-            QLabel#MindMapSubtitle { font-family: Segoe UI; font-size: 13px; color: #aaaaaa; }
-            QLabel#MindMapStatus { font-family: Segoe UI; font-size: 12px; color: #bbbbbb; padding: 4px 2px; }
-            QFrame#MindMapPanel { background-color: #0b0b0b; border: 1px solid #333333; border-radius: 12px; padding: 10px; }
-            QLabel#PanelHeader { font-family: Segoe UI; font-size: 14px; font-weight: 700; color: #f2f2f2; }
-            QListWidget, QTextEdit, QLineEdit, QTabWidget::pane { background-color: #111111; color: #ffffff; border: 1px solid #444444; border-radius: 10px; padding: 8px; font-family: Segoe UI; font-size: 13px; }
-            QTabBar::tab { background-color: #171717; color: #dddddd; border: 1px solid #333333; border-bottom: none; padding: 7px 12px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-family: Segoe UI; }
-            QTabBar::tab:selected { background-color: #242424; color: #ffffff; }
-            QPushButton { background-color: #171717; color: #f2f2f2; border: 1px solid #444444; border-radius: 7px; padding: 7px 10px; font-family: Segoe UI; font-size: 13px; }
-            QPushButton:hover { background-color: #242424; border-color: #666666; }
-            QPushButton:disabled { color: #777777; border-color: #292929; }
-            QGraphicsView { background-color: #111111; border: 1px solid #444444; border-radius: 10px; }
+            QWidget { background-color: #07090c; color: #edf2f7; font-family: Segoe UI; }
+            QLabel#MindMapTitle { font-size: 25px; font-weight: 800; color: #ffffff; }
+            QLabel#MindMapSubtitle { font-size: 12px; color: #8f9baa; }
+            QLabel#MindMapStatus { font-size: 11px; color: #91a0b0; padding: 3px 2px; }
+            QLabel#MindMapSelectionStatus { font-size: 11px; color: #b7c4d2; padding: 3px 2px; }
+            QLabel#GraphHint { font-size: 11px; color: #718095; }
+            QFrame#MindMapPanel { background-color: #0d1117; border: 1px solid #202833; border-radius: 12px; }
+            QLabel#PanelHeader { font-size: 12px; font-weight: 700; color: #cbd5df; padding: 0 2px 2px 2px; }
+            QListWidget, QTextEdit, QLineEdit { background-color: #090d12; color: #edf2f7; border: 1px solid #26313d; border-radius: 8px; padding: 7px; font-size: 12px; selection-background-color: #254d78; }
+            QListWidget::item { padding: 4px 5px; border-radius: 5px; }
+            QListWidget::item:hover { background-color: #151c25; }
+            QListWidget::item:selected { background-color: #1d3853; color: #ffffff; }
+            QTabWidget::pane { background-color: #090d12; border: 1px solid #26313d; border-radius: 8px; top: -1px; }
+            QTabBar::tab { background-color: #111720; color: #9eabba; border: 1px solid #26313d; border-bottom: none; padding: 7px 10px; }
+            QTabBar::tab:selected { background-color: #18212c; color: #ffffff; }
+            QPushButton { background-color: #121820; color: #e7edf4; border: 1px solid #2b3744; border-radius: 7px; padding: 7px 10px; font-size: 12px; }
+            QPushButton:hover { background-color: #1a2430; border-color: #43566a; }
+            QPushButton:pressed { background-color: #203044; }
+            QPushButton:disabled { color: #596675; border-color: #1c242d; }
+            QPushButton#PrimaryMindMapButton { background-color: #245f8f; border-color: #3779aa; font-weight: 700; }
+            QPushButton#PrimaryMindMapButton:hover { background-color: #2f73aa; }
+            QGraphicsView { background-color: #090c10; border: 1px solid #222c37; border-radius: 9px; }
+            QSplitter::handle { background-color: #111820; border-radius: 3px; }
+            QSplitter::handle:hover { background-color: #233244; }
             """
         )
 
     def _build_left_panel(self) -> QWidget:
-        """Build navigation and actions without exposing graph storage to widgets."""
         tabs = QTabWidget()
         self.left_tabs = tabs
+
         nodes_tab = QWidget()
         nodes_layout = QVBoxLayout(nodes_tab)
-        nodes_layout.setContentsMargins(0, 0, 0, 0)
+        nodes_layout.setContentsMargins(6, 8, 6, 6)
+        nodes_layout.setSpacing(7)
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search graph...")
+        self.search_input.setPlaceholderText("Search title, content, type...")
         self.search_input.returnPressed.connect(self._search)
         self.search_button = QPushButton("Search")
         self.search_button.clicked.connect(self._search)
         search_row = QHBoxLayout()
-        search_row.addWidget(self.search_input)
+        search_row.setSpacing(5)
+        search_row.addWidget(self.search_input, 1)
         search_row.addWidget(self.search_button)
         self.node_list = QListWidget()
+        self.node_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.node_list.currentItemChanged.connect(self._select_list_node)
+        self.node_list.itemDoubleClicked.connect(lambda _item: self._open_selected_source())
         nodes_layout.addLayout(search_row)
-        nodes_layout.addWidget(self.node_list)
+        nodes_layout.addWidget(self.node_list, 1)
         tabs.addTab(nodes_tab, "Nodes")
 
         actions_tab = QWidget()
         actions_layout = QVBoxLayout(actions_tab)
-        actions_layout.setContentsMargins(0, 0, 0, 0)
-        actions_layout.setSpacing(8)
+        actions_layout.setContentsMargins(6, 8, 6, 6)
+        actions_layout.setSpacing(7)
         actions = (
-            ("Edit Selected", self._edit_selected), ("Pin Node", self._toggle_pin),
-            ("Set as Central", self._toggle_central), ("Recenter Linked", self._recenter_linked),
+            ("Open Source", self._open_selected_source),
+            ("Edit Selected", self._edit_selected),
+            ("Copy Node ID", self._copy_selected_node_id),
+            ("Pin Node", self._toggle_pin),
+            ("Set as Central", self._toggle_central),
+            ("Recenter Linked", self._recenter_linked),
             ("Focus Selected", self._focus_selected),
-            ("New Node", self._create_node), ("Delete Selected", self._delete_selected),
-            ("Link Selected", self._link_selected_node), ("Unlink Selected", self._unlink_selected_node),
-            ("Force Layout", self._auto_layout), ("Fit Graph", self._fit_graph), ("Refresh", self.refresh_graph),
-            ("Export JSON", self._export_graph), ("Import JSON", self._import_graph),
+            ("New Node", self._create_node),
+            ("Import Chats", self._import_chats),
+            ("Delete Selected", self._delete_selected),
+            ("Link Selected", self._link_selected_node),
+            ("Unlink Selected", self._unlink_selected_node),
+            ("Force Layout", self._auto_layout),
+            ("Fit Graph", self._fit_graph),
+            ("Refresh", self.refresh_graph),
+            ("Export JSON", self._export_graph),
+            ("Import JSON", self._import_graph),
         )
         self.action_buttons: dict[str, QPushButton] = {}
         for index, (label, callback) in enumerate(actions):
             if index == 0:
-                actions_layout.addWidget(QLabel("Selected Node"))
-            if index == 5:
-                actions_layout.addSpacing(10)
-                actions_layout.addWidget(QLabel("Graph Editing"))
+                heading = QLabel("Selected object")
+                heading.setObjectName("GraphHint")
+                actions_layout.addWidget(heading)
+            if index == 7:
+                actions_layout.addSpacing(7)
+                heading = QLabel("Graph editing")
+                heading.setObjectName("GraphHint")
+                actions_layout.addWidget(heading)
             button = QPushButton(label)
             button.clicked.connect(callback)
             actions_layout.addWidget(button)
@@ -395,14 +610,16 @@ class MindMapView(QWidget):
         self.right_tabs = tabs
         self.context_summary = QTextEdit()
         self.context_summary.setReadOnly(True)
-        self.context_summary.setPlaceholderText("Hover or select a node to preview its stored graph context.")
+        self.context_summary.setPlaceholderText("Hover or select a node to preview its meaning.")
         self.selection_summary = QTextEdit()
         self.selection_summary.setReadOnly(True)
-        self.selection_summary.setPlaceholderText(
-            "Select a node or relationship to inspect its persisted properties."
-        )
+        self.selection_summary.setPlaceholderText("Select a node or relationship to inspect persisted properties.")
+        self.connections_summary = QTextEdit()
+        self.connections_summary.setReadOnly(True)
+        self.connections_summary.setPlaceholderText("Connected nodes and relationship evidence will appear here.")
         tabs.addTab(self.context_summary, "Context")
-        tabs.addTab(self.selection_summary, "Node Details")
+        tabs.addTab(self.selection_summary, "Details")
+        tabs.addTab(self.connections_summary, "Connections")
         layout.addWidget(tabs)
         return panel
 
@@ -448,16 +665,33 @@ class MindMapView(QWidget):
             for node in snapshot.nodes:
                 item = self.node_items.get(node.node_id)
                 if item is None:
+                    visual_radius, opacity, layer_score = projected_physics.visual_metrics(node.node_id)
                     item = GraphNodeItem(
                         node,
                         moved_callback=self._persist_node_position,
+                        drag_started_callback=self._begin_node_drag,
+                        dragged_callback=self._update_node_drag,
                         hover_callback=self._show_hover_context,
+                        double_click_callback=self._open_node_source,
                         relevance=projected_physics.nodes[node.node_id].relevance,
+                        visual_radius=visual_radius,
+                        opacity=opacity,
+                        layer_score=layer_score,
                     )
+                    projected_position = projected_physics.positions()[node.node_id]
+                    item.set_visual_position(*projected_position)
                     self.scene.addItem(item)
                     self.node_items[node.node_id] = item
                 else:
-                    item.update_node(node, projected_physics.nodes[node.node_id].relevance)
+                    visual_radius, opacity, layer_score = projected_physics.visual_metrics(node.node_id)
+                    item.update_node(
+                        node,
+                        projected_physics.nodes[node.node_id].relevance,
+                        visual_radius=visual_radius,
+                        opacity=opacity,
+                        layer_score=layer_score,
+                    )
+                    item.set_visual_position(*projected_physics.positions()[node.node_id])
 
             for link in snapshot.links:
                 item = self.link_items.get(link.link_id)
@@ -483,12 +717,14 @@ class MindMapView(QWidget):
                     self.link_items[link_id].setSelected(True)
 
             self.status_label.setText(
-                f"{len(snapshot.nodes)} nodes · {len(snapshot.links)} links · SQLite saved"
+                f"{len(snapshot.nodes)} nodes · {len(snapshot.links)} links · graph storage synchronized"
             )
             self._populate_node_list(snapshot.nodes)
             if snapshot.nodes and not selected_node_ids and not selected_link_ids:
                 self._fit_graph()
-            if topology_changed:
+            resume_physics = topology_changed or self._resume_physics_after_refresh
+            self._resume_physics_after_refresh = False
+            if resume_physics:
                 self._start_physics_motion()
         except Exception as error:
             self._show_error("Mind Map refresh failed", error)
@@ -545,7 +781,15 @@ class MindMapView(QWidget):
         for node_id, (x, y) in self.physics.positions().items():
             item = self.node_items.get(node_id)
             if item is not None:
-                item.setPos(x, y)
+                radius, opacity, layer_score = self.physics.visual_metrics(node_id)
+                item.update_node(
+                    item.node,
+                    self.physics.nodes[node_id].relevance,
+                    visual_radius=radius,
+                    opacity=opacity,
+                    layer_score=layer_score,
+                )
+                item.set_visual_position(x, y)
         self._physics_ticks += 1
         self._settled_physics_ticks = (
             self._settled_physics_ticks + 1 if movement < self.PHYSICS_SETTLE_DISTANCE else 0
@@ -589,11 +833,178 @@ class MindMapView(QWidget):
     def _show_hover_context(self, node_id: str | None) -> None:
         node = self._nodes_by_id.get(node_id or "")
         if node is None:
-            self.context_summary.setPlainText("Select a node to view its stored graph context.")
+            selected = [item.node for item in self.scene.selectedItems() if isinstance(item, GraphNodeItem)]
+            if selected:
+                self.context_summary.setPlainText(self._node_context_text(selected[0]))
+            else:
+                self.context_summary.setPlainText("Select a node to view its stored graph context.")
             return
-        self.context_summary.setPlainText(
-            f"Preview: {node.title}\n\nType: {node.node_type}\n\n{node.description or node.content or 'No stored context.'}"
+        self.context_summary.setPlainText(self._node_context_text(node, preview=True))
+
+    def _node_context_text(self, node: GraphNode, *, preview: bool = False) -> str:
+        metadata = dict(node.metadata)
+        tags = metadata.get("tags", [])
+        if isinstance(tags, str):
+            tags = [value.strip() for value in tags.split(",") if value.strip()]
+        source = "Manual Mind Map object"
+        if node.source_reference is not None:
+            source = f"{node.source_reference.source_type}:{node.source_reference.source_id}"
+            if node.source_reference.source_locator:
+                source += f" · {node.source_reference.source_locator}"
+        body = node.description or node.content or "No stored context."
+        if preview and len(body) > 1300:
+            body = body[:1297].rstrip() + "..."
+        lines = [
+            f"{node.title}",
+            f"{node.node_type.replace('_', ' ').title()} · importance {node.importance:.2f} · confidence {node.confidence:.2f}",
+            "",
+            body,
+        ]
+        if node.description and node.content and node.content != node.description:
+            content = node.content
+            if preview and len(content) > 900:
+                content = content[:897].rstrip() + "..."
+            lines.extend(("", "Stored content", content))
+        lines.extend(("", f"Source: {source}"))
+        if tags:
+            lines.append(f"Tags: {', '.join(str(tag) for tag in tags)}")
+        return "\n".join(lines)
+
+    def _connection_text(self, node_id: str) -> str:
+        records: list[str] = []
+        for item in self.link_items.values():
+            link = item.link
+            if link.source_node_id == node_id:
+                other_id = link.target_node_id
+                direction = "→"
+            elif link.target_node_id == node_id:
+                other_id = link.source_node_id
+                direction = "←"
+            else:
+                continue
+            other = self._nodes_by_id.get(other_id)
+            other_title = other.title if other else other_id
+            relation = link.label or link.link_type.replace("_", " ")
+            detail = (
+                f"{direction} {other_title}\n"
+                f"   {relation} · strength {link.strength:.2f} · confidence {link.confidence:.2f}"
+            )
+            if link.evidence:
+                evidence = link.evidence if len(link.evidence) <= 420 else link.evidence[:417].rstrip() + "..."
+                detail += f"\n   Evidence: {evidence}"
+            records.append(detail)
+        if not records:
+            return "This node has no direct graph relationships yet."
+        return f"{len(records)} direct relationship(s)\n\n" + "\n\n".join(records)
+
+    def _apply_focus_highlight(self, node_id: str | None) -> None:
+        if not node_id or node_id not in self.node_items:
+            for item in self.node_items.values():
+                item.set_focus_level("normal")
+            for item in self.link_items.values():
+                item.set_focus_level("normal")
+            return
+        neighbors = self.physics.get_direct_neighbors(node_id) if self.physics else set()
+        for candidate_id, item in self.node_items.items():
+            if candidate_id == node_id:
+                item.set_focus_level("selected")
+            elif candidate_id in neighbors:
+                item.set_focus_level("neighbor")
+            else:
+                item.set_focus_level("dimmed")
+        for item in self.link_items.values():
+            link = item.link
+            connected = link.source_node_id == node_id or link.target_node_id == node_id
+            item.set_focus_level("connected" if connected else "dimmed")
+
+    def _open_node_source(self, node_id: str) -> None:
+        node = self._nodes_by_id.get(node_id)
+        if node is None:
+            return
+        if node.source_reference is None:
+            self._select_node(node_id)
+            self._edit_selected()
+            return
+        self.source_open_requested.emit(
+            node.source_reference.source_type,
+            node.source_reference.source_id,
+            node.source_reference.source_locator,
         )
+        self.status_label.setText(f"Opening source for {node.title}...")
+
+    def _open_selected_source(self) -> None:
+        node = self._single_selected_node()
+        if node is not None:
+            self._open_node_source(node.node_id)
+
+    def _copy_selected_node_id(self) -> None:
+        node = self._single_selected_node()
+        if node is None:
+            return
+        QApplication.clipboard().setText(node.node_id)
+        self.status_label.setText(f"Copied node ID: {node.node_id}")
+
+    def _import_chats(self) -> None:
+        list_chats = getattr(self.core, "list_chats", None)
+        upsert = getattr(self.core, "upsert_mind_map_source_node", None)
+        if not callable(list_chats) or not callable(upsert):
+            QMessageBox.information(self, "Chat import unavailable", "Current Core does not expose Chat Registry import methods.")
+            return
+        try:
+            chats = list(list_chats())
+        except Exception as error:
+            self._show_error("Could not load chats", error)
+            return
+        if not chats:
+            QMessageBox.information(self, "No chats", "There are no dedicated AMADEUS chats to import.")
+            return
+        dialog = ChatImportDialog(chats, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        selected = dialog.selected_chats()
+        if not selected:
+            return
+
+        def import_selected() -> list[str]:
+            imported_ids: list[str] = []
+            for chat in selected:
+                chat_id = str(getattr(chat, "chat_id", "")).strip()
+                if not chat_id:
+                    continue
+                priority = str(getattr(chat, "priority", "Normal"))
+                priority_score = {"critical": 1.0, "important": 0.82, "normal": 0.55, "low": 0.32, "ignore": 0.10}.get(priority.lower(), 0.55)
+                metadata = {
+                    "chat_priority": priority,
+                    "chat_purpose": str(getattr(chat, "purpose", "General")),
+                    "chat_scope": str(getattr(chat, "scope", "Local")),
+                    "tags": ["chat", str(getattr(chat, "purpose", "General")).lower().replace(" ", "_")],
+                    "source_registry": "chat_registry",
+                }
+                node = upsert(
+                    source_type="chat",
+                    source_id=chat_id,
+                    title=str(getattr(chat, "title", "Untitled Chat")),
+                    description=str(getattr(chat, "description", "")),
+                    node_type="chat",
+                    importance=priority_score,
+                    confidence=1.0,
+                    metadata=metadata,
+                )
+                imported_ids.append(node.node_id)
+            return imported_ids
+
+        self._run_core(
+            import_selected,
+            self._show_chat_import_result,
+            f"Importing {len(selected)} chat(s)",
+            error_title="Chat import failed",
+        )
+
+    def _show_chat_import_result(self, imported: object) -> None:
+        node_ids = list(imported) if isinstance(imported, list) else []
+        self.status_label.setText(f"Imported or updated {len(node_ids)} chat node(s).")
+        self._after_refresh.append(lambda: self._select_node(node_ids[-1]) if node_ids else None)
+        self.refresh_graph()
 
     def _run_core(
         self,
@@ -631,8 +1042,11 @@ class MindMapView(QWidget):
         self.canvas.setEnabled(not busy)
         for widget in self._busy_widgets:
             widget.setEnabled(not busy)
+        self.quick_edit_button.setEnabled(False)
         if busy:
             self.status_label.setText(message)
+        else:
+            self._update_action_buttons()
 
     def _dispatch_worker_success(self, callback: Callable[[object], None], result: object) -> None:
         callback(result)
@@ -694,8 +1108,25 @@ class MindMapView(QWidget):
             QMessageBox.warning(self, "Missing title", "A mind map node needs a title.")
             return
         center = self.canvas.mapToScene(self.canvas.viewport().rect().center())
+        selected_chat_node_id = next(
+            (
+                item.node_id
+                for item in self.scene.selectedItems()
+                if isinstance(item, GraphNodeItem)
+                and item.node.source_reference is not None
+                and item.node.source_reference.source_type == "chat"
+            ),
+            None,
+        )
+        create_workspace_node = getattr(self.core, "create_mind_map_workspace_node", None)
+        operation = create_workspace_node if callable(create_workspace_node) else self.core.create_mind_map_node
         self._run_core(
-            lambda: self.core.create_mind_map_node(**values, position_x=center.x(), position_y=center.y()),
+            lambda: operation(
+                **values,
+                linked_chat_node_id=selected_chat_node_id,
+                position_x=center.x(),
+                position_y=center.y(),
+            ),
             lambda node: self._refresh_then(lambda: self._select_node(node.node_id)),
             "Creating node",
         )
@@ -790,6 +1221,7 @@ class MindMapView(QWidget):
             dialog = NodeDialog(self, item.node)
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 values = dialog.values()
+                values.pop("create_workspace_object", None)
                 self._run_core(
                     lambda: self.core.update_mind_map_node(item.node_id, **values),
                     lambda _result: self._refresh_then(lambda: self._select_node(item.node_id)),
@@ -809,10 +1241,23 @@ class MindMapView(QWidget):
         selected = self.scene.selectedItems()
         if not selected:
             return
+        source_backed_nodes = [
+            item.node
+            for item in selected
+            if isinstance(item, GraphNodeItem) and item.node.source_reference is not None
+        ]
+        source_warning = ""
+        if source_backed_nodes:
+            source_types = ", ".join(sorted({node.source_reference.source_type for node in source_backed_nodes}))
+            source_warning = (
+                "\n\nThis selection includes real AMADEUS workspace objects "
+                f"({source_types}). Their corresponding chat/sheet/comment/memory records will also be deleted."
+            )
         if QMessageBox.question(
             self,
             "Delete graph objects",
-            "Delete the selected graph objects? Deleting a node also deletes its connected links.",
+            "Delete the selected graph objects? Deleting a node also deletes its connected links."
+            + source_warning,
         ) != QMessageBox.StandardButton.Yes:
             return
         link_ids = [item.link_id for item in selected if isinstance(item, GraphLinkItem)]
@@ -826,11 +1271,32 @@ class MindMapView(QWidget):
 
         self._run_core(delete_selected, lambda _result: self.refresh_graph(), "Deleting graph objects")
 
+    def _begin_node_drag(self, node_id: str) -> None:
+        """Wake visual physics and anchor the actively dragged node."""
+        self.canvas.set_fast_drag_mode(True)
+        if self.physics is None or node_id not in self.physics.nodes:
+            return
+        self.physics.start_drag(node_id)
+        self._physics_ticks = 0
+        self._settled_physics_ticks = 0
+        if len(self.physics.nodes) <= self.MAX_LIVE_SIMULATION_NODES:
+            self._physics_timer.start()
+
+    def _update_node_drag(self, node_id: str, x: float, y: float) -> None:
+        """Move the physics anchor during drag so neighboring nodes keep reacting."""
+        if self.physics is not None and node_id in self.physics.nodes:
+            self.physics.drag_to(node_id, x, y)
+
     def _persist_node_position(self, node_id: str, x: float, y: float) -> None:
+        self.canvas.set_fast_drag_mode(False)
         node = self._nodes_by_id.get(node_id)
         if self._refreshing or node is None or node.position_locked or node.metadata.get("mindmap_pinned", False):
             return
+        if self.physics is not None and node_id in self.physics.nodes:
+            self.physics.drag_to(node_id, x, y)
+            self.physics.stop_drag(node_id)
         if not self._busy:
+            self._resume_physics_after_refresh = True
             self._run_core(
                 lambda: self.core.move_mind_map_node(node_id, x, y),
                 lambda _result: None,
@@ -902,12 +1368,15 @@ class MindMapView(QWidget):
             self.status_label.setText("Selected node has no direct links.")
             return
         positions: dict[str, tuple[float, float]] = {}
+        center_item = self.node_items.get(node.node_id)
+        center_x = center_item.pos().x() if center_item is not None else node.position_x
+        center_y = center_item.pos().y() if center_item is not None else node.position_y
         for index, neighbor_id in enumerate(neighbor_ids):
             neighbor = self._nodes_by_id[neighbor_id]
             if neighbor.position_locked or neighbor.metadata.get("mindmap_pinned", False):
                 continue
             angle = math.tau * index / len(neighbor_ids)
-            positions[neighbor_id] = (node.position_x + math.cos(angle) * 150, node.position_y + math.sin(angle) * 150)
+            positions[neighbor_id] = (center_x + math.cos(angle) * 165, center_y + math.sin(angle) * 165)
         self._run_core(
             lambda: self.core.move_mind_map_nodes(positions),
             lambda _result: self._refresh_then(lambda: self._select_node(node.node_id)),
@@ -987,33 +1456,87 @@ class MindMapView(QWidget):
             "Importing graph",
         )
 
+    def _update_action_buttons(self) -> None:
+        if not hasattr(self, "action_buttons") or self._busy:
+            return
+        selected = self.scene.selectedItems()
+        selected_nodes = [item for item in selected if isinstance(item, GraphNodeItem)]
+        one_node = len(selected_nodes) == 1 and len(selected) == 1
+        one_object = len(selected) == 1
+        has_selection = bool(selected)
+        node = selected_nodes[0].node if one_node else None
+        has_source = bool(node and node.source_reference)
+        has_links = bool(
+            node
+            and any(
+                item.link.source_node_id == node.node_id or item.link.target_node_id == node.node_id
+                for item in self.link_items.values()
+            )
+        )
+        states = {
+            "Open Source": has_source,
+            "Edit Selected": one_object,
+            "Copy Node ID": one_node,
+            "Pin Node": one_node,
+            "Set as Central": one_node,
+            "Recenter Linked": one_node and has_links,
+            "Focus Selected": one_node,
+            "Delete Selected": has_selection,
+            "Link Selected": len(selected_nodes) in {1, 2} and len(self.node_items) > 1,
+            "Unlink Selected": one_node and has_links,
+        }
+        for label, enabled in states.items():
+            button = self.action_buttons.get(label)
+            if button is not None:
+                button.setEnabled(enabled)
+        self.quick_edit_button.setEnabled(one_node)
+
     def _show_selection(self) -> None:
         selected = self.scene.selectedItems()
         if len(selected) != 1:
             self.selection_summary.setPlainText(
                 f"{len(selected)} objects selected." if selected else "No graph object selected."
             )
+            self.connections_summary.setPlainText(
+                "Select one node to inspect its direct graph neighborhood."
+            )
+            self.selection_label.setText(
+                f"{len(selected)} selected" if selected else "No selection"
+            )
+            self._apply_focus_highlight(None)
+            self._update_action_buttons()
             return
         item = selected[0]
         if isinstance(item, GraphNodeItem):
             node = item.node
-            self.context_summary.setPlainText(
-                f"Selected: {node.title}\n\nType: {node.node_type}\n\n"
-                f"{node.description or node.content or 'No stored context.'}"
-            )
+            self.context_summary.setPlainText(self._node_context_text(node))
             source = (
                 f"{node.source_reference.source_type}:{node.source_reference.source_id}"
                 if node.source_reference else "manual"
             )
+            metadata_lines = [f"{key}: {value}" for key, value in sorted(dict(node.metadata).items())]
             self.selection_summary.setPlainText(
                 f"NODE\n\nTitle: {node.title}\nType: {node.node_type}\nStatus: {node.status}\n"
                 f"Importance: {node.importance:.2f}\nConfidence: {node.confidence:.2f}\n"
-                f"Position: ({node.position_x:.1f}, {node.position_y:.1f})\n"
-                f"Locked: {node.position_locked}\nSource: {source}\n\n"
-                f"Description:\n{node.description or '—'}\n\nContent:\n{node.content or '—'}"
+                f"Position: ({item.pos().x():.1f}, {item.pos().y():.1f})\n"
+                f"Locked: {node.position_locked}\nPinned: {bool(node.metadata.get('mindmap_pinned', False))}\n"
+                f"Central: {bool(node.metadata.get('mindmap_central', False))}\nSource: {source}\n\n"
+                f"Metadata:\n{chr(10).join(metadata_lines) if metadata_lines else '—'}"
             )
+            self.connections_summary.setPlainText(self._connection_text(node.node_id))
+            self.selection_label.setText(f"{node.node_type.title()}: {node.title}")
+            self.graph_hint.setText("Connected nodes stay bright; unrelated nodes fade into the background")
+            self._apply_focus_highlight(node.node_id)
         elif isinstance(item, GraphLinkItem):
             link = item.link
+            source = self._nodes_by_id.get(link.source_node_id)
+            target = self._nodes_by_id.get(link.target_node_id)
+            self.context_summary.setPlainText(
+                f"{source.title if source else link.source_node_id}\n"
+                f"  — {link.label or link.link_type.replace('_', ' ')} →\n"
+                f"{target.title if target else link.target_node_id}\n\n"
+                f"{link.evidence or 'No relationship evidence has been stored yet.'}"
+            )
             self.selection_summary.setPlainText(
                 f"LINK\n\nType: {link.link_type}\nLabel: {link.label or '—'}\n"
                 f"Strength: {link.strength:.2f}\nConfidence: {link.confidence:.2f}\n"
@@ -1021,6 +1544,20 @@ class MindMapView(QWidget):
                 f"Usage count: {link.usage_count}\nReward: {link.reward_score:.2f}\n"
                 f"Punishment: {link.punishment_score:.2f}\n\nEvidence:\n{link.evidence or '—'}"
             )
+            self.connections_summary.setPlainText(
+                f"Source: {source.title if source else link.source_node_id}\n"
+                f"Target: {target.title if target else link.target_node_id}\n\n"
+                "Select either endpoint to inspect its complete local neighborhood."
+            )
+            self.selection_label.setText(f"Link: {link.link_type.replace('_', ' ')}")
+            for node_item in self.node_items.values():
+                if node_item.node_id in {link.source_node_id, link.target_node_id}:
+                    node_item.set_focus_level("neighbor")
+                else:
+                    node_item.set_focus_level("dimmed")
+            for link_item in self.link_items.values():
+                link_item.set_focus_level("connected" if link_item.link_id == link.link_id else "dimmed")
+        self._update_action_buttons()
 
     def _select_node(self, node_id: str) -> None:
         self.scene.clearSelection()

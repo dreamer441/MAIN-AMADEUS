@@ -4,9 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from amadeus_core.core import AmadeusCore
 from export_module import ChatExportService, ExportSelection, ExportedChatRecord
 from materials_module import MaterialsService
+from materials_module.workspace import MaterialsWorkspace
 from storage import ChatHistoryMessage, ChatMetadata
 
 
@@ -177,9 +177,7 @@ class MaterialsCoreRouteTests(unittest.TestCase):
     """Verify Core obtains material context through the Materials public API."""
 
     def test_handle_material_message_routes_selected_context_once(self) -> None:
-        core = object.__new__(AmadeusCore)
         contexts: list[str] = []
-        core.materials_service = type("Materials", (), {"build_callable_context": lambda _self, material_id: f"context:{material_id}"})()
         received_events: list[object] = []
 
         def handle_user_message(message, callable_context=None, event_listener=None):
@@ -187,19 +185,24 @@ class MaterialsCoreRouteTests(unittest.TestCase):
             event_listener({"title": "Request Received"})
             return {"response": message}
 
-        core.handle_user_message = handle_user_message
+        workspace = MaterialsWorkspace(
+            materials_service=type("Materials", (), {"build_callable_context": lambda _self, material_id: f"context:{material_id}"})(),
+            handle_user_message=handle_user_message,
+        )
 
-        result = core.handle_material_message("material:notes.txt", "Question", event_listener=received_events.append)
+        result = workspace.handle_material_message("material:notes.txt", "Question", event_listener=received_events.append)
 
         self.assertEqual({"response": "Question"}, result)
         self.assertEqual(["context:material:notes.txt"], contexts)
         self.assertEqual([{"title": "Request Received"}], received_events)
 
     def test_get_material_copy_text_delegates_through_materials(self) -> None:
-        core = object.__new__(AmadeusCore)
-        core.materials_service = type("Materials", (), {"material_copy_text": lambda _self, material_id: f"copy:{material_id}"})()
+        workspace = MaterialsWorkspace(
+            materials_service=type("Materials", (), {"material_copy_text": lambda _self, material_id: f"copy:{material_id}"})(),
+            handle_user_message=lambda *_args, **_kwargs: {},
+        )
 
-        self.assertEqual("copy:export:export_chat_1", core.get_material_copy_text("export:export_chat_1"))
+        self.assertEqual("copy:export:export_chat_1", workspace.get_material_copy_text("export:export_chat_1"))
 
 
 if __name__ == "__main__":

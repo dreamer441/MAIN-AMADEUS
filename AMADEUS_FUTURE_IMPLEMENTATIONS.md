@@ -2,6 +2,9 @@
 
 Global checklist for project-wide tracking. Do not delete completed items; check them off and keep adding future work. Module-specific plans still belong in each module's `FUTURE_UPDATES.md`.
 
+- [x] Add Flow Inner Brain advisory inference only with the same explicit-command precedence and safe read-context validation used by dedicated Chats.
+- [x] Require Core-owned visible approval for inferred and explicit Flow creation actions; retain only bounded process-local pending records.
+
 ## Foundation
 - [x] Clean modular shell
 - [x] Identity Module
@@ -55,6 +58,8 @@ Global checklist for project-wide tracking. Do not delete completed items; check
 - [ ] Mind map / relevance graph integration
 - [ ] PermissionGuard and reversible actions
 - [ ] Logged autonomy after safe read-only and draft stages
+- [ ] Second Brain action detection and command routing, including intent-to-`/review` routing without embedding keyword heuristics in Flow Chat
+- [ ] Second Brain intent-to-`/create-chat` routing without embedding natural-language detection in Flow Chat
 
 ## Side Panel Workspace
 - [x] Dedicated `side_panel` module for payload/state structure
@@ -125,17 +130,44 @@ Global checklist for project-wide tracking. Do not delete completed items; check
 - [ ] Use red message-number badge for ignored messages.
 - [ ] Keep message text itself uncolored so readability stays high.
 
+## Mind Map Intelligence / Graph Curator
+
+- [x] Preserve deterministic SQLite/Core graph authority while reconstructing the living relevance interface.
+- [x] Add manual source-backed Chat Registry import and two-way source navigation.
+- [x] Expand `[mindmap]` retrieval through explicit graph neighborhoods and relationship evidence.
+- [ ] Add a Graph Curator submodule with its own specialized LLM prompt and model route.
+- [ ] Add structured chat analysis for summary, ideas, decisions, tasks, requirements, risks, open questions, and evidence.
+- [ ] Add graph-change proposals and validation before any LLM-created node/link mutation.
+- [ ] Add manual curator invocation before Creation Mode, Drift Mode, or Chat-model-triggered invocation.
+- [ ] Add proposal review for merges, major importance changes, contradictions, and destructive actions.
+- [ ] Add semantic duplicate detection, cluster summaries, and knowledge-gap proposals.
+
+
+## Mind Map ↔ Workspace synchronization follow-ups (2026-07-28)
+
+- Add a real Materials creation API before `material` nodes can create and synchronize actual Materials records.
+- Add retroactive per-chat import for existing sheets, comments, memories, materials, and selected message ranges.
+- Add token-aware prioritization and per-node injection controls when a chat has many direct graph neighbors.
+- Add a reviewable Graph Curator proposal layer for structured extraction, relationship discovery, duplicate handling, and metadata generation.
+- Keep default chat context limited to explicit direct links; add deep/cluster retrieval as separate intentional operations.
+- Add recovery/compensation for multi-module writes and conflict handling for simultaneous source/graph edits.
 
 ## Infinite Canvas / Spatial Conversation
 
 - [x] Add a first-class Core-registered Canvas module and visible zoomable/pannable workspace shell.
-- [ ] Add typed text blocks with stable IDs and in-place editing.
-- [ ] Add selection, multi-selection, dragging, resizing, deletion, copy/paste, undo, and redo.
-- [ ] Add semantic lines/arrows, relationship labels, connector comments, groups, and branch traversal.
-- [ ] Add safe structured Canvas persistence and revision history.
+- [x] Add typed text blocks with stable IDs and direct editing.
+- [x] Add selection, multi-selection, dragging, and deletion.
+- [ ] Add resizing, copy/paste, undo, redo, layering, and locking controls.
+- [x] Add semantic lines/arrows, relationship labels, connector comments, and attached movement.
+- [ ] Add groups, branch traversal, relation filtering, and branch highlighting.
+- [x] Add safe structured Canvas persistence with document/object/connector revisions and schema migration.
 - [ ] Use the visible viewport as the default context lens, with explicit selection, branch, and whole-canvas modes.
 - [ ] Add context preview, token budgeting, and honest excluded-object reporting.
 - [ ] Send structured Canvas context to AMADEUS and insert movable source-linked response blocks.
 - [ ] Add delta-based repeated sends using object and connector revisions.
 - [ ] Convert reviewed Canvas branches into Mind Map candidates through the Creation Module.
 - [ ] Add stylus strokes, handwriting recognition, graph interpretation, imported images, and later visual collaboration.
+
+## Ownership cleanup completed — 2026-09-14
+
+Core now routes to owner workflows; application composition and workspace integration have dedicated homes. Follow-up work should add narrow service protocols, retire compatibility imports after migration, and define general skill/capability permissions without moving execution back into Core. Reasoning and Skills remain placeholders.

@@ -14,10 +14,11 @@ from typing import Any
 
 @dataclass(frozen=True, slots=True)
 class CommentEntry:
-    """One saved comment attached to selected text inside a chat."""
+    """One saved comment, optionally attached to a dedicated chat."""
 
     comment_id: str
-    chat_id: str
+    chat_id: str | None
+    scope: str
     comment: str
     selected_text: str
     created_at: str
@@ -30,6 +31,7 @@ class CommentEntry:
         return {
             "comment_id": self.comment_id,
             "chat_id": self.chat_id,
+            "scope": self.scope,
             "comment": self.comment,
             "selected_text": self.selected_text,
             "created_at": self.created_at,
@@ -43,7 +45,10 @@ class CommentEntry:
         """Parse one JSON object into a safe comment entry."""
         try:
             comment_id = str(raw.get("comment_id") or "").strip()
-            chat_id = str(raw.get("chat_id") or "").strip()
+            raw_chat_id = raw.get("chat_id")
+            chat_id = str(raw_chat_id).strip() if raw_chat_id is not None else None
+            chat_id = chat_id or None
+            scope = str(raw.get("scope") or ("chat" if chat_id else "global")).strip().lower()
             comment = str(raw.get("comment") or "").strip()
             selected_text = str(raw.get("selected_text") or "").strip()
             created_at = str(raw.get("created_at") or "").strip()
@@ -54,7 +59,9 @@ class CommentEntry:
         except Exception:
             return None
 
-        if not comment_id or not chat_id or not comment or not created_at or comment_type not in {"selection", "general"}:
+        if not comment_id or not comment or not created_at or comment_type not in {"selection", "general"}:
+            return None
+        if scope not in {"chat", "global"} or (scope == "chat" and not chat_id) or (scope == "global" and chat_id):
             return None
         if comment_type == "general":
             selected_text = ""
@@ -62,6 +69,7 @@ class CommentEntry:
         return cls(
             comment_id=comment_id,
             chat_id=chat_id,
+            scope=scope,
             comment=comment,
             selected_text=selected_text,
             created_at=created_at,

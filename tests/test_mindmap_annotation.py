@@ -69,7 +69,7 @@ class MindMapCallableContextTests(unittest.TestCase):
             )),
             identity_prompt_builder=SimpleNamespace(build_for_chat=lambda **_kwargs: "identity"),
             chat_module_provider=lambda: self.chat,
-            persist_exchange=lambda message, response: self.persisted.append((message, response)),
+            persist_exchange=lambda message, response, decision=None: self.persisted.append((message, response)),
             build_response=lambda response, trace_logger, **_kwargs: {
                 "response": response,
                 "trace_events": trace_logger.get_trace_events(),
@@ -105,8 +105,9 @@ class MindMapCallableContextTests(unittest.TestCase):
         self.assertEqual("explain it", self.chat.calls[0][0])
         context = self.chat.calls[0][1]["callable_context"]
         self.assertIn("Node ID: 1234", context)
-        self.assertIn("Content: four digit node content", context)
+        self.assertIn("<<<CONTENT\nfour digit node content\nCONTENT", context)
         self.assertIn("retrieved from AMADEUS Mind Map", context)
+        self.assertIn("Never invent missing labels", context)
         self.assertNotIn("must not be injected", context)
         self.assertEqual("LLM answer", result["response"])
         self.assertEqual(["Mind Map Query Started", "Mind Map Results Retrieved"], [

@@ -2,6 +2,268 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-09-14 - Core Ownership Cleanup
+
+- Date: 2026-09-14 (approved design and extraction began 2026-09-12).
+- Phase: Modular architecture cleanup.
+- Feature or fix: Restore Core routing boundaries while retaining the existing feature set.
+- What changed: Extracted startup composition into `amadeus_app`, dedicated conversation workflows into `chat_workspace`, and cross-owner graph/source workflows into `workspace_integration`. Flow, Canvas, Creation, Habit Tracker, Materials, Project File Reader, Side Ask, Context Builder and Response Modes now own their former Core execution helpers. PermissionGuard owns single-use approval dispatch. Added explicit Canvas/Habit Core facades, shared Habit GUI injection, plain Sheet target resolution and compatibility re-exports. Updated ownership documentation and ignored all local runtime stores.
+- Files/modules affected: Core and the owner packages above; Annotation, GUI, Sheets, Mind Map compatibility integration, regression fixtures, module FEATURES/FUTURE_UPDATES and READMEs, architecture rules, `.gitignore`, approved design/plan and `docs/CORE_CLEANUP_REPORT.md`. The report contains the exact incremental file inventory.
+- User-visible behavior: Existing chat, Flow, annotations, selected-context requests, approvals, Canvas, Mind Map, Habit and persistence workflows remain available. Core's implementation no longer owns their feature behavior. No data reset or feature removal is part of the cleanup.
+- Architecture notes: Core routes through explicit registered interfaces; application setup injects dependencies. Modules execute through public owner APIs; storage stays with its owner. PermissionGuard protects existing proposals and is not a system sandbox. Historical imports remain lightweight compatibility exports. Existing uncommitted feature source required by the composed application is preserved in the delivery.
+- Tests performed: Full Python compilation passed; all 336 tests passed together and across 25 isolated module runs. Independent ownership and delivery reviews passed. Commands are recorded in `docs/CORE_CLEANUP_REPORT.md`. Updated stale fixture contracts and drained pending Qt refresh workers before test window disposal.
+- Known limitations: Live Ollama quality and interactive desktop/restart checks are provided as a manual checklist. Compatibility accessors and broad service types remain; general skill permissions, a skill runner, reasoning implementation and cross-owner transaction compensation are future work.
+
+## 2026-08-05 - Flow Habit Request Boundary Redesign
+
+- Date: 2026-08-05
+- Phase: Flow-to-Habit Tracker integration
+- Feature or fix: Replaced the direct fragile Flow Habit parser route with a typed request boundary.
+- What changed: Raw Flow Habit text now passes through a dedicated boundary that normalizes bounded task phrases, uses Creation task preparation through the existing interpreter, returns deterministic reads or validated approval requests, and converts all parser validation failures into user-safe responses.
+- Files/modules affected: `flow_chat` Habit request service, Core Flow coordination, focused Flow Habit tests, Flow/Core module documentation, and this changelog.
+- User-visible behavior: Natural and slash task forms, including dated tasks and urgent/important matrix tasks, request approval and persist only after approval. Invalid dates, times, titles, and unsupported Habit commands return specific local guidance instead of a generic Flow failure.
+- Architecture notes: Habit Tracker remains the only persistence owner. Core registers only the boundary's validated typed approval fields and dispatches them after the existing pending-action approval.
+- Tests performed: Focused Flow Habit tests and Python compilation are recorded in the task report.
+- Known limitations: Natural language remains deliberately bounded to the deterministic Habit grammar; no LLM-derived dates, identifiers, or write fields are accepted.
+
+## 2026-08-05 - Flow Habit Task Creation Fix
+
+- Date: 2026-08-05
+- Phase: Flow-to-Habit Tracker integration
+- Feature or fix: Fixed natural one-time and Eisenhower task creation routing.
+- What changed: Flow now defaults an undated one-time task to today, extracts supported natural dates before optional field clauses, and removes the `Eisenhower task` label from the stored task title.
+- Files/modules affected: `flow_chat` parser, Core/GUI approval-path regression tests, module documentation, and the Flow task creation report.
+- User-visible behavior: `create a task Buy groceries`, `add a task Buy groceries tomorrow`, and Eisenhower task requests return a visible Habit Tracker approval instead of failing, falling through to the LLM, or returning read-only guidance.
+- Architecture notes: Flow remains deterministic; Core registers and consumes the integrity-checked `habit_tracker` pending action; the GUI only displays and approves its payload.
+- Tests performed: `tests.test_flow_habit_commands` and the focused Flow GUI Habit Tracker approval-payload test passed; `py -3.13 -m compileall .` passed. The broader Flow GUI module retains an unrelated Canvas storage-facade test failure.
+- Known limitations: Natural dates remain intentionally bounded to today, tomorrow, next weekday, and ISO dates; urgency and importance remain explicit `urgent:` and `important:` fields.
+
+## 2026-08-05 - Flow Habit Tracker Parity
+
+- Date: 2026-08-05
+- Phase: Flow-to-Habit Tracker integration
+- Feature or fix: Added approval-gated deterministic Flow control for Habit Tracker.
+- What changed: Added `/habit` reads and bounded natural aliases for routines, one-time tasks, calendar events, Eisenhower tasks, timers, and alarms. Added matrix update/completion/scheduling and explicit alarm owner APIs with additive SQLite migration. Task content is validated by Creation before Core prepares a pending owner action.
+- Files/modules affected: `flow_chat`, `habit_tracker`, `creation_module`, `amadeus_core`, focused tests, module documentation, and this changelog.
+- User-visible behavior: Flow can list Habit Tracker state and request every supported action. Writes and destructive actions show the existing approval UI; ambiguous dates/times and empty tasks are rejected locally with guidance.
+- Architecture notes: Flow parses only deterministic grammar, Creation prepares task content, Core coordinates pending actions, and Habit Tracker remains the only SQLite owner.
+- Tests performed: `py -3.13 -m compileall .`; focused Flow/Habit Tracker/Core approval tests.
+- Known limitations: The existing Habit Tracker GUI has not yet added controls for matrix editing/completion or explicit alarms; Flow exposes those owner capabilities now.
+
+## 2026-08-05 - Mind Map Canvas Projection
+
+- Date: 2026-08-05
+- Phase: Canvas/Mind Map workspace synchronization
+- Feature or fix: Added the read-only Mind Map Canvas projection alongside automatic source-backed Canvas projection to Mind Map.
+- What changed: Persisted Canvas block and connector mutation events project stable `canvas_block` nodes and `canvas_connector` links into Mind Map. Eligible Mind Map source nodes (`chat`, `sheet`, `memory`, `comment`, and `canvas_block`) and links with two eligible endpoints now reconcile into the dedicated `mindmap_projection` Canvas workspace titled `Mind Map`. Canvas-backed Mind Map nodes render as compact `84 x 40` rounded rectangles, and Canvas connector relation type, label, and comment map to link type, label, and evidence.
+- Files/modules affected: `canvas_module`, `mindmap` workspace synchronization and GUI items, `amadeus_core` coordination, focused Canvas/Mind Map tests, module documentation, and this changelog.
+- User-visible behavior: Canvas blocks and connectors appear in Mind Map automatically. Eligible Mind Map source records and their mutual links also appear in the separate locked `Mind Map` Canvas workspace. Deleting either Canvas source removes its graph projection; deleting a projected Mind Map node or link removes its Canvas source. Chat-backed nodes remain elliptical.
+- Architecture notes: Canvas owns block and connector content, layout, and semantics. Core subscribes the synchronization bridge after composing the Canvas facade; the bridge uses stable source references and Canvas events to avoid deletion loops. The reverse projection is managed only by reconciliation: metadata marks its locked Canvas records and prevents them from re-entering the Canvas-to-Mind Map bridge. Manual Mind Map creation and source-content edits never create or edit Canvas blocks.
+- Tests performed: `py -3.13 -m compileall .`; `py -3.13 -m unittest tests.test_canvas_module tests.test_mindmap_workspace_sync tests.test_mindmap -v`.
+- Known limitations: Only eligible source-backed Mind Map nodes and links with two eligible endpoints appear in the read-only `Mind Map` Canvas workspace. Managed projection records cannot be edited or deleted from Canvas; source changes must occur in the owning Mind Map or workspace module.
+
+## 2026-08-04 - Phase: Module Metadata Annotation
+
+- Feature or fix: Read-only module metadata annotation and general-chat inference.
+- What changed: Added verified aggregation of FEATURES.md and FUTURE_UPDATES.md, guided [metadata] suggestions, Memory-panel display, and bounded general-chat open/answer routing.
+- Files/modules affected: project_file_reader, annotation_module, inner_brain, amadeus_core, amadeus_gui, and focused tests.
+- User-visible behavior: Dato can browse module metadata with guided annotations or ask general chat to show/explain it; Flow Chat does not infer it.
+- Architecture notes: ProjectFileReader owns fixed-file reads; annotations render results; Core validates routing; Inner Brain remains advisory.
+- Tests performed: Focused reader, annotation, GUI, Inner Brain, Core, Flow tests; py -3.13 -m compileall .
+- Known limitations: Aggregate metadata output is bounded and does not edit or persist module documents.
+
+## 2026-08-02 - Chat Action Approval
+
+- Date: 2026-08-02
+- Phase: Core-owned action approval
+- Feature or fix: Replaced optimistic inferred and explicit Flow creation with visible approval requests.
+- What changed: Added a bounded, TTL-limited, integrity-hashed, single-use Core pending-action registry. Normal-chat write candidates and `/create-chat`, `/create-sheet`, `/create-comment`, and `/create-memory` now return `approval_request`; Flow and dedicated Chats show the shared Approve / Decline dialog and only approve through Core's existing owner facades.
+- Files/modules affected: Core pending-action service and coordinator, Flow Chat, Inner Brain integration, shared GUI dialog and response handlers, focused tests, module documentation, and this changelog.
+- User-visible behavior: AMADEUS no longer reports a requested creation as completed before it occurs. Decline writes nothing; approval performs the existing owner action and its Mind Map synchronization.
+- Architecture notes: Only chat, sheet, comment, memory, and export actions are registered. Pending state is process-local and does not permit arbitrary filesystem, shell, or external operations.
+- Tests performed: Pending lifecycle, Inner Brain, Flow, and mocked headless GUI approval tests; full compile and whitespace validation are run with this change.
+- Known limitations: Pending requests expire after five minutes and are lost on application restart; approval dialogs are modal by design.
+
+## 2026-08-02 - Inner Brain Flow Inference Safety
+
+- Date: 2026-08-02
+- Phase: Local advisory Flow analysis
+- Feature or fix: Closed the Inner Brain V1 Flow inference gap without enabling inferred actions.
+- What changed: Core now injects a narrow callback into Flow that analyzes plain messages with `route="flow"` and returns only bounded context from the existing no-argument read annotation handler. Explicit `/review`, `/create-chat`, `/create-sheet`, `/create-comment`, and `/create-memory` commands skip inference.
+- Files/modules affected: Core coordinator, Flow Chat service, Inner Brain and Flow documentation, focused Flow tests, and this changelog.
+- User-visible behavior: Plain Flow requests can receive safe inferred project read context. Flow commands keep their established explicit behavior. Advisory write candidates do not create or modify anything.
+- Architecture notes: Flow imports no Core or annotation internals. Core retains Inner Brain invocation and annotation ownership; Flow accepts only a text-context callback result.
+- Tests performed: Focused fake-Inner-Brain Flow tests plus Python compilation.
+- Known limitations: Inference is limited to existing no-argument `file`, `sheet`, `export`, and `mindmap` read handlers and does not accept model-provided locators or execute writes.
+
+## 2026-08-02 - Inner Brain V1
+
+- Date: 2026-08-02
+- Phase: Local advisory chat analysis
+- Feature or fix: Added a separate strict-JSON Nemotron Inner Brain for safe dedicated-chat advisory analysis and explicit five-layer chat metadata.
+- What changed: Added a pure injected `inner_brain` service using `nemotron-3-nano:4b`, additive chat-index metadata migration, explicit Analyze / Refresh and Create Export Core actions, Chat Data side-panel rendering, and Mind Map source-node metadata projection. Plain dedicated-chat inference uses only no-argument existing read handlers; inferred write candidates are display-only.
+- Files/modules affected: `inner_brain`, Storage, Core coordinator, dedicated-chat side panel, Mind Map workspace synchronization, focused tests, and module documentation.
+- User-visible behavior: Chat Data displays title, description, short summary, detailed summary, export reference, model status, and non-executable suggested writes. Refresh is explicit; exports are created only from the explicit control.
+- Architecture notes: The primary LLM is unchanged. Inner Brain has no persistence, export, filesystem, or graph access. Storage owns the index record and Core owns routing, export calls, and graph resynchronization.
+- Tests performed: Focused fake-Inner-Brain/service, storage migration, annotation Core, Mind Map synchronization, and headless GUI tests; Python compilation and Git whitespace validation.
+- Known limitations: Flow annotation inference is not integrated in this increment. Its explicit Flow commands remain authoritative, and metadata refresh stays explicit.
+
+## 2026-08-02 - Immediate Flow Creation And Annotations
+
+- Date: 2026-08-02
+- Phase: Controlled Creation workspace handoff
+- Feature or fix: Replaced Flow workspace proposal approval with immediate scoped creation and added Flow annotation suggestions.
+- What changed: `/create-sheet`, `/create-comment`, and `/create-memory` now validate then call one Core-owned workspace adapter immediately. Their default scope is global and unlinked; only the exact final `; scope: chat` suffix links to the active dedicated chat. Comments now persist explicit `global` or `chat` scope with optional owner migration for legacy chat records. Flow composes the existing annotation suggestion backend with Flow-only staged `/create` commands.
+- Files/modules affected: `creation_module`, `flow_chat`, `comments_module`, Core composition, Mind Map workspace sync, Flow GUI, focused tests, module documentation, and this changelog.
+- User-visible behavior: Flow creation commands create records immediately. Global records do not appear in dedicated-chat linked context; explicitly chat-scoped Sheet, Comment, and Memory records do. In Flow, `/` opens the annotation popup, `/create` advances to creation commands, arrows navigate, Enter/Tab insert, Escape hides, and normal Enter sends when hidden. Dedicated Chat does not expose Flow commands.
+- Architecture notes: Creation remains orchestration-only and never writes owner stores or Mind Map directly. Core composes the adapter, owner modules persist, and Core then synchronizes the graph. Existing chat comments and `[memory]` behavior remain unchanged.
+- Tests performed: Focused comments, Creation, Flow, Mind Map synchronization, and headless annotation/Flow GUI tests; full Python compilation and Git whitespace validation.
+- Known limitations: `/approve` is no longer a Flow action and is treated as normal Flow text. Global comments have no dedicated global-panel UI yet. The existing Canvas fake-Core GUI test remains unrelated to this feature.
+
+## 2026-08-02 - Flow Workspace Creation Commands
+
+- Date: 2026-08-02
+- Phase: Controlled Creation workspace handoff
+- Feature or fix: Added explicit Flow Sheet, Comment, and Memory proposal and approval commands.
+- What changed: Added `/create-sheet`, `/create-comment`, and `/create-memory` temporary Flow-session proposals plus `/approve <id[, id...]>`. Creation validates typed proposals and calls a Core-composed owner adapter only after explicit selection. The adapter uses the existing Sheet, Comment, and Memory public services, then calls existing Mind Map workspace synchronization methods.
+- Files/modules affected: `creation_module`, `flow_chat`, Core coordinator composition, focused Creation/Flow/Mind Map tests, module documentation, and this changelog.
+- User-visible behavior: Creation commands return a proposal ID and do not persist anything until `/approve`. Approved chat-scoped Sheets, Comments, and Memories are linked to the active dedicated chat and appear as literal direct-neighbor context in later dedicated-chat prompts. Memory supports chat scope by default and `; scope: global`.
+- Architecture notes: Flow owns only in-memory proposal session state. Creation performs no JSON, SQLite, GUI, Canvas, or Mind Map writes. Core composes the adapter; existing owner services remain persistence authorities and Mind Map sync occurs only after owner persistence. Existing `[memory]` behavior is unchanged.
+- Tests performed: Focused Creation approval validation, Flow command lifecycle, owner-service/Mind Map synchronization, and captured fake-LLM linked-context regression; Python compilation and Git whitespace validation.
+- Known limitations: Commands use simple request text with strict JSON generation only for missing Sheet title metadata and safe fallbacks if generation is unavailable. There is no proposal review GUI, natural-language intent routing, or Second Brain routing.
+
+## 2026-08-02 - Flow Create Chat Command
+
+- Date: 2026-08-02
+- Phase: Flow Chat dedicated-workspace creation
+- Feature or fix: Added explicit `/create-chat <request>` dedicated chat creation.
+- What changed: Added Flow-owned command parsing, recognized Title/Description/Weight/Priority metadata fields, strict Ollama JSON metadata generation for missing fields, safe defaults for unavailable or invalid JSON, and a typed created-chat response payload. Core injects its existing `create_chat()` facade so storage persistence and Mind Map source-node synchronization remain unchanged. The GUI validates the payload, refreshes the selector, and opens the created workspace on its Qt GUI thread.
+- Files/modules affected: `flow_chat`, Core coordinator composition, Flow GUI shell, focused Flow/Mind Map/GUI tests, Flow documentation, future implementation tracking, and this changelog.
+- User-visible behavior: `/create-chat <request>` creates an editable dedicated chat and opens it automatically. Explicit metadata wins; missing metadata is generated locally when possible or defaults to New Chat, empty description, and Normal priority. Normal Flow and `/review` remain unchanged.
+- Architecture notes: Flow owns command parsing and metadata resolution. Core remains the sole route to `create_chat()` and Storage remains the persistence owner; the existing Core path preserves Mind Map synchronization. No natural-language command detection was added.
+- Tests performed: Focused Flow, Mind Map workspace synchronization, and headless Flow GUI tests; full Python compilation; Git whitespace check.
+- Known limitations: Creation stays explicit. Future Second Brain intent routing may offer natural-language creation only after its permission and command-routing boundary is designed.
+
+## 2026-08-02 - Flow Read-Only Review Command
+
+- Date: 2026-08-02
+- Phase: Flow Chat review context
+- Feature or fix: Added explicit read-only `/review <question>` patch review support.
+- What changed: Added a Flow-owned builder that reads the Changelog and Future Implementations before current Git status, changed names, diff statistics, and bounded safe changed-file content. Missing review questions return local validation without an LLM call or Flow-history write.
+- Files/modules affected: `flow_chat`, Core composition, focused Flow tests, Flow documentation, root future implementations, and this changelog.
+- User-visible behavior: `/review <question>` asks AMADEUS the question with current bounded project review context. Normal Flow requests are unchanged.
+- Architecture notes: `ProjectFileReader` remains the file-content boundary. Git is invoked read-only with no shell; the command never stages, commits, pushes, or reads ignored/runtime paths.
+- Tests performed: `py -3 -m compileall .` completed; `py -3 -m unittest tests.test_flow_chat -v` passed 26 tests. The combined Flow/GUI run had one existing Canvas-shell failure caused by a fake Core without Canvas storage support.
+- Known limitations: Git-unavailable repositories return an explicit context note. Review context is capped by file count and character limits and does not include staged-only diff content.
+
+## 2026-08-02 - Creation Module V1
+
+- Date: 2026-08-02
+- Phase: Controlled creation handoff
+- Feature or fix: Added source-derived metadata, categorization, and explicit Memory Brick proposal orchestration.
+- What changed: Added a persistence-free Creation Module with strict Ollama JSON generation, source-hash checks, manual-field protection, temporary proposals, approval-only Memory writes, and duplicate-proposal rejection. Extended the existing Memory SQLite source table for caller-supplied raw content and derived metadata; approved records continue through JSONL compatibility and structured Memory Brick storage.
+- Files/modules affected: `creation_module`, `memory_module`, Core composition, Mind Map synchronization, focused tests, module documentation, and this changelog.
+- User-visible behavior: No GUI route was added. Public Core and module-registry facades are available for safe source registration and explicit approval workflows.
+- Architecture notes: Creation owns orchestration only. Memory owns the sole database, JSONL compatibility, source metadata, and brick persistence. Raw locators are never dereferenced.
+- Tests performed: Focused Creation/Memory tests and Python compilation.
+- Known limitations: Generic registration requires the owner to supply raw content. No owner-specific source listings, proposal UI, background jobs, or autonomous extraction were added.
+
+## 2026-08-02 - Structured Memory Foundation
+
+- Date: 2026-08-02
+- Phase: Memory Module foundation
+- Feature or fix: Added additive SQLite structured memory storage beside the established JSONL memory store.
+- What changed: Added Memory Bricks with multi-value labels, scope, evidence, importance, confidence, FTS/LIKE search, idempotent JSONL migration, source/layer/placeholder records, source-hash stale detection, a null vector boundary, and a Mind Map projection helper. Explicit `[memory]` saves now mirror into SQLite using the same ID.
+- Files/modules affected: `memory_module`, focused memory-foundation tests, Memory Module documentation, and this changelog.
+- User-visible behavior: Existing explicit memory saving, listing, prompt context, panels, and source-backed Mind Map editing remain unchanged. Structured retrieval and source registration are available through the module service; no automatic memory or derived content is created.
+- Architecture notes: JSONL remains the compatibility path and canonical input for existing workflows. SQLite is module-owned at `data/memory/memory.sqlite`; source records retain metadata locators rather than copying module-owned raw data.
+- Tests performed: Focused migration, dual-write, structured search, source-layer staleness, and Mind Map projection tests; changed-source compilation and existing Mind Map synchronization regression tests.
+- Known limitations: Source adapters for existing module inventories and generated knowledge layers are intentionally deferred. The vector adapter is null until a local secondary index is selected.
+
+## 2026-08-02 - Dedicated Chat Response Modes
+
+- Date: 2026-08-02
+- Phase: Dedicated Chat response-policy foundation
+- Feature or fix: Added fixed per-chat response modes and backend output budgeting.
+- What changed: Added canonical none, short, normal, large, and full_send policies; persisted response_mode metadata with normal migration; resolved each dedicated request once; injected safe policy instructions; mapped hard limits to Ollama num_predict; and suppressed NONE assistant bubbles and transcript rows.
+- Files/modules affected: `response_modes`, Storage, Core coordinator, Chat Module, Ollama client, dedicated-chat metadata dialog, focused tests, module documentation, and this changelog.
+- User-visible behavior: Edit or create a dedicated Chat and choose None, Short, Normal, Large, or Full Send. NONE processes the message but displays and stores no normal AMADEUS reply. Flow stays Normal.
+- Architecture notes: Policies are independent immutable data. Core routes and resolves once, Chat builds prompts, Ollama applies the budget, Storage owns metadata, and the existing TraceLogger emits safe lifecycle metadata.
+- Tests performed: Focused response-mode policy, storage migration, Core suppression, prompt/budget, and Ollama payload tests; changed-source compilation.
+- Known limitations: Current non-streaming Ollama integration estimates completion from response size; a visible Full Send Continue action awaits a streaming/structured completion adapter.
+
+## 2026-08-02 - Chat Transcript Spacing and Habit Matrix
+
+- Date: 2026-08-02
+- Phase: Chat and Habit Tracker visual polish
+- Feature or fix: Restored the original chat alignment, added message spacing, and made Eisenhower task priority visible as a table.
+- What changed: Flow Chat and dedicated Chats remain left-aligned, insert two empty transcript rows between messages, and render User/AMADEUS headings in bold. Dedicated Chat response length moved from the New/Edit Chat dialog to a title-only selector beneath Send. Habit Tracker highlights today's calendar date in light green and replaces its matrix list with Urgent, Important, and Task columns sorted by combined priority, urgent, important, then unmarked.
+- Files/modules affected: `amadeus_gui/flow_chat_view.py`, `amadeus_gui/main/main_window.py`, `habit_tracker/view.py`, GUI and Habit Tracker documentation, focused tests, and this changelog.
+- User-visible behavior: Chat messages are easier to scan without changing their established layout. The current calendar day is easy to find, and matrix priorities are visible at a glance.
+- Architecture notes: These are display-only changes. Chat persistence, Core routes, and stored Eisenhower quadrant values remain unchanged.
+- Tests performed: Focused transcript-spacing, calendar-format, and matrix-table checks plus changed-source compilation.
+- Known limitations: Matrix indicator cells are read-only reflections of task creation choices; editing a task's priority after creation is not yet available.
+
+## 2026-08-02 - Habit Tracker Weekly Routines
+
+- Date: 2026-08-02
+- Phase: Habit Tracker usability
+- Feature or fix: Added weekday-selected recurring task creation to Habit Tracker.
+- What changed: Added an `Add Routine` dialog with Monday-through-Sunday selectors. It stores selected days through the existing `custom_days` routine service contract, so one task record appears every matching weekday in each following week.
+- Files/modules affected: `habit_tracker/view.py`, focused Habit Tracker tests and documentation, and this changelog.
+- User-visible behavior: Dato can create a routine once, choose its weekly days, and check it off independently each time it recurs.
+- Architecture notes: The UI reuses `HabitTrackerService.add_routine_task()` and its date-based recurrence evaluation; no recurring task copies are created.
+- Tests performed: Habit Tracker service tests passed, including next-week Monday/Friday recurrence; headless PyQt6 dialog selection validation passed; changed files compiled successfully.
+- Known limitations: The creation dialog currently covers custom weekly weekdays. Daily and every-other-day setup remain future UI options.
+
+## 2026-08-02 - Habit Tracker Module Port
+
+- Date: 2026-08-02
+- Phase: Independent module integration
+- Feature or fix: Replaced the Habit Tracker placeholder with the local Task Manager Personal task-planning workspace.
+- What changed: Added an independent `habit_tracker` package with a local SQLite service and PyQt6 view for routine tasks, one-time tasks, calendar events, Eisenhower tasks, timers, and due-alarm notifications. Registered the real reusable view in the shared module-window shell. The source task manager's embedded AMADEUS chat panel, imports, and actions were intentionally excluded.
+- Files/modules affected: `habit_tracker`, `amadeus_gui/main/main_window.py`, focused GUI/service tests, GUI and Habit Tracker documentation, and this changelog.
+- User-visible behavior: Opening Habit Tracker now opens the complete local planning workspace in its own reusable window. AMADEUS chat remains exclusively in Flow Chat and is not duplicated inside Habit Tracker.
+- Architecture notes: Habit Tracker owns only its local database at `data/habit_tracker/habit_tracker.db`; it has no Core, chat, memory, or external task-manager directory dependency.
+- Tests performed: Habit Tracker service tests passed; a headless PyQt6 Habit Tracker view construction check passed; affected GUI shell tests were run.
+- Known limitations: Routine creation and scheduled alarms/reminders existed in the source service but not its primary UI, so they remain service capabilities/future UI work. One existing Canvas GUI test fails with a fake Core that lacks Canvas storage support.
+
+## 2026-08-02 - Core Public Shell Cleanup
+
+- Date: 2026-08-02
+- Phase: Core architecture cleanup
+- Feature or fix: Separated the lightweight public Core entry point from the existing coordination implementation without changing Core behavior.
+- What changed: Moved the complete existing `AmadeusCore` implementation into `core_coordinator.py` as `CoreCoordinator`. `core.py` now exposes the stable `AmadeusCore` type as a thin inherited public shell, so existing application, GUI, and test imports and method contracts remain unchanged.
+- Files/modules affected: `amadeus_core/core.py`, `amadeus_core/core_coordinator.py`, Core documentation, and this changelog.
+- User-visible behavior: None. All current Core routes, service attributes, payloads, and module facades are preserved.
+- Architecture notes: The public entry point is now 12 lines and contains no feature logic. Composition and routing remain isolated behind the stable Core API, providing a safe foundation for future focused coordinator extractions.
+- Tests performed: `py -3 -m compileall amadeus_core`; focused Core, annotation, Flow, project-file, materials, Mind Map workspace synchronization, and Mind Map annotation tests passed (71 tests).
+- Known limitations: The existing Mind Map GUI busy-control test fails independently of this refactor. The required `python` command resolves to the unavailable Windows Store alias in this environment; validation used the installed `py -3` launcher.
+
+## 2026-07-29 - Canvas Multi-Workspace Foundation
+
+- Date: 2026-07-29
+- Phase: Canvas project separation
+- Feature or fix: Added lightweight Canvas workspaces so independent projects no longer share one overloaded infinite canvas.
+- What changed: Added a versioned workspace registry, create/switch/rename/archive operations, one document per workspace, last-active restoration, safe migration of legacy root-level Canvas JSON files, recoverable trash storage, and per-workspace session undo. The Canvas GUI now exposes a workspace selector and New/Rename/Delete controls that are locked during active LLM requests.
+- Files/modules affected: `canvas_module` models, storage, facade, GUI, focused tests and documentation; GUI feature/future documentation; this changelog.
+- User-visible behavior: Dato can maintain separate Canvas projects, switch between them instantly, and reopen the last active workspace after restarting AMADEUS. Deleting a workspace archives its file and automatically leaves a valid active Canvas.
+- Architecture notes: Workspace registry metadata is separate from Canvas document content. Stable workspace IDs survive renaming. Each workspace owns its blocks, connectors, root, semantic baseline, send operations, and undo stack.
+- Tests performed: Focused tests cover creation, switching, renaming, independent data/baselines, last-active restoration, legacy migration, recoverable deletion, final-workspace replacement, per-workspace undo, malformed registry preservation, and title validation.
+- Known limitations: Viewport centre/zoom are not yet stored per workspace, deleted workspaces do not yet have an in-app restore screen, and major modules still share the current stacked main-window shell.
+
+## 2026-07-28 - Canvas Interaction and Direct-Answer Patch
+
+- Date: 2026-07-28
+- Phase: Canvas spatial conversation usability
+- Feature or fix: Added persistent visual block resizing, two-right-click quick arrows, adaptive AMADEUS response sizing, and direct-answer prompt safeguards.
+- What changed: Selected unlocked blocks display a bottom-right resize handle and save dimensions after the drag ends. Right-clicking a source block followed by a target block creates a directional arrow. Canvas prompts now contain human-readable target/history/peer text rather than raw object JSON and IDs. Metadata-narrating responses receive one corrective retry and are rejected if still unusable. Long AMADEUS responses start with a taller block while remaining manually resizable.
+- Files/modules affected: `canvas_module/gui/view.py`, `canvas_module/conversation.py`, `canvas_module/canvas_module.py`, focused Canvas tests, Canvas documentation, and this changelog.
+- User-visible behavior: Dato can resize text and AMADEUS blocks, create arrows rapidly with two right-clicks, and receive substantially cleaner answers that address the actual Canvas request rather than describing internal context objects.
+- Architecture notes: Width/height remain layout-only and are excluded from semantic fingerprints. Connectors remain ID-based domain relationships. The exact structured context remains in the send audit record, while the LLM receives a concise semantic rendering.
+- Tests performed: Focused tests cover direct prompts without IDs, corrective retry, metadata-response rejection, and adaptive long-response sizing. Full compilation and non-GUI regression validation are run with this delivery.
+- Known limitations: Resize currently uses one bottom-right handle; undo/redo and multi-handle resizing remain future work.
+
 ## 2026-07-27 - Mind Map Import Schema Safeguard
 
 - Date: 2026-07-27
@@ -453,6 +715,45 @@ Append-only global project progress log. Module-specific details still belong in
 - **Tests performed:** Focused GUI keyboard and side-panel state tests, full suite, and compilation.
 - **Known limitations:** Panel visibility is retained while the application runs but is not saved between restarts.
 
+## 2026-07-28 - Mind Map Living Interface Reconstruction
+
+- Rebuilt the Mind Map presentation around the earlier AMADEUS relevance-graph behaviour while preserving the current SQLite/Core/service foundation.
+- Added relevance-based node size, opacity, and depth; central-node gravity; typed relationship physics; directed relationship styling; and deterministic overlap separation.
+- Added neighborhood focus: selecting a node keeps directly connected objects bright and fades unrelated graph content.
+- Replaced the fixed CRUD-style workspace with resizable Explore, Graph, and Context panels plus Context, Details, and Connections inspection tabs.
+- Added manual Chat Registry import through source upsert identity, so selected chats become stable graph nodes and repeated imports update rather than duplicate them.
+- Added Core-coordinated source navigation for chat, message, sheet, and material nodes.
+- Upgraded `[mindmap]` retrieval from isolated node rows to bounded node-and-link context packages containing explicit relationship direction, confidence, strength, permanence, evidence, and source references.
+- Kept all graph writes behind MindMapService and Core; visual physics remains transient and never writes storage automatically.
+- Validation: 15 Core/physics tests and 7 Mind Map annotation lifecycle tests passed in the headless environment; GUI sources compiled successfully. Final visual validation remains a Windows/PyQt6 runtime step.
+
+
+## 2026-07-28 - Mind Map and Chat Workspace Synchronization
+
+- Added a `MindMapWorkspaceSync` adapter between graph storage and Chat, Sheets, Comments, and Memory public APIs.
+- New chats, chat-scoped sheets, comments, and explicit memory entries now gain stable source-backed graph nodes and chat relationships.
+- Added real-object creation for `chat`, `sheet`, `comment`, and `memory` node types, with an explicit graph-only opt-out.
+- Added default direct-neighbor prompt injection with a per-link `inject_into_chat` switch and bounded context limits.
+- Added the right-panel Linked tab and automatic panel refresh after graph/workspace changes.
+- Replaced relationship arrows/labels with clean straight lines and a selectable midpoint detail point.
+- Fixed drag interaction so graph physics wakes during engagement and resumes after persisted movement.
+- Reduced background repaint work with cached, batched grid rendering.
+- Added `[mindmap]` to slash suggestions and source navigation for Sheet and Comment graph nodes.
+- Added stable-id memory update/soft-delete service operations for graph/source consistency.
+- Added focused cross-module synchronization tests.
+
+## 2026-07-28 - Mind Map Interaction, Source Deletion, and Grounded Context Patch
+
+- Fixed ordinary node selection so a click no longer starts drag physics or reflows the graph; physics wakes only after the pointer crosses a real drag threshold.
+- Added a visible header-level **Edit Node** button and kept source-backed node types locked against unsafe in-place module conversion.
+- Reduced drag repaint cost by temporarily disabling antialiasing and using minimal viewport updates during active movement.
+- Changed Mind Map deletion so source-backed Chat, Sheet, Comment, and Memory nodes delete their real owning object by default; the confirmation dialog now warns before workspace data is removed.
+- Replaced ambiguous linked-node prompt text with literal delimited Title, Type, Source, Description, Content, and Relationship fields.
+- Added strict Chat grounding rules that forbid invented node labels, categories, IDs, relationships, or sheet contents and make exact graph records override older assistant guesses.
+- Added guided `[mindmap]` suggestions after the annotation is selected.
+- Files/modules affected: `mindmap/gui`, `mindmap/integrations`, `amadeus_core`, `amadeus_chat`, `annotation_module`, focused tests, and module documentation.
+- Validation: 33 non-GUI Mind Map tests passed through a Linux compatibility runner; changed Python sources compiled successfully. PyQt interaction remains a Windows runtime validation step because PyQt6 is unavailable in this build environment.
+- Known limitations: deleting a Chat node removes the chat record but does not yet cascade-delete every separate Sheet, Comment, Memory, or Material associated with that chat; no undo/archive recovery exists yet.
 
 ## 2026-07-28 - Canvas Module Workspace Foundation
 
@@ -465,3 +766,59 @@ Append-only global project progress log. Module-specific details still belong in
 - Architecture notes: The current phase creates only the module and GUI boundary. No Canvas objects, persistence, context injection, LLM request, or Mind Map conversion has been claimed. Future GUI actions must route through Core/module public APIs rather than owning storage or reasoning.
 - Tests performed: Python compilation and focused non-GUI Canvas tests. Full Windows/PyQt6 validation remains required because this Linux environment does not provide PyQt6 or Windows-only `msvcrt`.
 - Known limitations: The Canvas is empty except for navigation and visual guidance; typed blocks and structured interactions begin in the next phase.
+
+## 2026-07-28 — Canvas semantic connectors
+
+- Upgraded Canvas persistence to schema v2 with non-destructive loading of existing schema-v1 text-only workspaces.
+- Added stable semantic connector models for plain lines and directional arrows.
+- Added two-click source/target connector creation, live attached geometry, selection, labels, relation types, comments, editing, and deletion.
+- Deleting blocks now atomically removes attached connectors; moving blocks preserves connector revisions and semantics.
+- Added focused migration, validation, persistence, cascade-deletion, and connector-regression tests.
+- Known limitations: grouping, branch traversal tools, undo/redo, viewport context, AMADEUS Canvas responses, handwriting, and images remain future work.
+
+## 2026-07-28 — Canvas AMADEUS conversation loop
+
+- Upgraded Canvas persistence to schema v4 with auditable send-operation history and non-destructive loading of schema-v1 through schema-v3 workspaces.
+- Added an optional one-off instruction field beside `Send Changes to AMADEUS`; empty instructions use natural target-focused continuation.
+- Added a Core-routed background Canvas request worker using the configured LLM client, AMADEUS identity, and shared Process Events.
+- Added target-focused Canvas prompt construction that uses arrows as directional history, lines as peer context, and the viewport only as the supporting boundary.
+- Successful requests now insert a movable AMADEUS response block and a persisted `responds_to` arrow from the primary target.
+- The response block, connector, exact context payload, rendered prompt, optional instruction, model name, process run ID, and semantic baseline are committed atomically.
+- Failed requests do not mutate the Canvas or advance the baseline; stale responses are rejected when the Canvas changes during generation.
+- Added focused tests for successful commits, empty instructions, failed LLM calls, stale-response rejection, automatic baseline behavior, and schema-v3 migration.
+- Known limitations: the sent baseline is currently workspace-wide rather than per branch; response-source selection for multi-target sends, retry/regenerate, groups, undo/redo, handwriting, and images remain future work.
+
+
+## 2026-07-28 — Canvas fast entry, multi-target grounding, and undo
+
+- Replaced multiline-only Canvas text dialogs with fast editors: Enter creates/saves the block and Shift+Enter inserts a line break.
+- Added a visible Undo toolbar action and `Ctrl+Z` shortcut backed by complete session-local snapshot restoration.
+- Undo now restores creations, edits, movement, resizing, deletion cascades, connectors, root state, semantic baselines, and AMADEUS send records atomically.
+- Strengthened Canvas prompting so one generated response handles every selected or changed target instead of silently choosing one.
+- Added explicit connection-flow serialization for all included arrows and lines, allowing several source blocks converging on a question to remain a combined reasoning context.
+- Added comparison grounding rules that discourage unsupported shared facts and require all relevant connected source blocks to be considered.
+- Added focused tests for reverse-order undo, atomic response undo, multiple targets, and multi-source connection flow.
+- Known limitations: undo history resets when AMADEUS restarts; redo and multi-target response-link selection remain future work.
+
+## 2026-07-31 — Independent module window workspace
+
+- Changed the primary AMADEUS window into a permanent Flow Chat home instead of a stacked page container.
+- Added one shared `ModuleWindowManager` and reusable top-level hosts for Chats, Code, Mind Map, Canvas, and Habit Tracker.
+- Module launch buttons now open or focus the existing window, preventing duplicate GUI views and duplicate module state.
+- Several module windows can remain visible simultaneously while Flow Chat stays open.
+- Closing one module window preserves its view and leaves the rest of AMADEUS running; closing Flow Chat coordinates final shutdown of every module window after active requests finish.
+- Existing Mind Map source navigation continues to work through a compatibility router that opens the correct independent window.
+- Added focused GUI regression coverage for reusable windows, simultaneous visibility, Flow draft retention, and independent Chats/Canvas/Mind Map surfaces.
+- Known limitations: module window geometry and monitor placement are not yet persisted across restarts, and intentional multi-instance windows are not yet supported.
+
+## 2026-08-03 - Shared Creation Annotations
+
+- Date: 2026-08-03
+- Phase: Shared creation routing
+- Feature or fix: Unified approval-gated chat, Sheet, and Memory creation across Flow and dedicated chat.
+- What changed: Added typed `/create-chat`, `[sheet][create]`, and `[memory][save]` parsing and suggestions; bounded Inner Brain `creation_kind`; Core-owned route defaults and fixed-scope approval dispatch; dialog-only approval output; and Flow post-approval workspace refresh.
+- Files/modules affected: Annotation Module, Inner Brain, Core coordinator and workspace adapter, Creation Module, Flow Chat, GUI, focused tests, module documentation, and this changelog.
+- User-visible behavior: Flow creates global standalone Sheet and Memory source nodes unless `; scope: chat` is selected. Dedicated chat defaults to the active chat and linked source nodes. Creation approval is shown only in the modal dialog, followed by a local completion or decline message.
+- Architecture notes: Annotation Module owns grammar and suggestions; Core owns pending actions, owner dispatch, scope, and graph synchronization. Inner Brain only advises `chat`, `sheet`, or `memory` intent and never writes data.
+- Tests performed: Focused annotation, Inner Brain, pending action, Flow, Mind Map, and headless GUI tests; Python compilation and whitespace validation.
+- Known limitations: Pending actions remain process-local, single-use, and expire after five minutes; creation metadata uses the existing local resolver fallback.

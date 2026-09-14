@@ -9,11 +9,26 @@
 - Add safer close/cancel behavior for long-running LLM calls.
 - Persist Flow and Chats side-panel visibility across application restarts.
 - Keep GUI comments updated when layout or worker flow changes.
+- Consider non-blocking explicit Chat Data refresh feedback if longer local Inner Brain generations need progress presentation.
+- Consider a non-modal approval queue only if it preserves the current per-action visible Approve / Decline decision.
+- Keep dialog approval as the only pre-write confirmation surface; transcript messages belong only after approval or decline.
+
+
+## Independent Module Window Architecture
+
+- [x] Keep Flow Chat as the always-open primary AMADEUS window.
+- [x] Open Chats, Mind Map, Canvas, Code, and Habit Tracker as independent top-level windows.
+- [x] Add one shared `ModuleWindowManager` that raises/focuses an existing module window instead of creating accidental duplicates.
+- [x] Closing a module window does not close Flow Chat or other modules; final application shutdown is coordinated by the Flow Chat main window.
+- [x] Preserve each module view instance while its window is hidden, restored, minimized, or focused.
+- [ ] Persist module-window geometry, maximized state, and monitor placement across application restarts.
+- [ ] Add intentional multi-instance support only for modules that later need it, such as opening two Canvas workspaces side by side.
+- [ ] Add a system-tray/minimize policy before changing the current rule that closing Flow Chat exits AMADEUS.
 
 ## Flow Shell Follow-up
 
 - Add Flow-specific keyboard send behavior and richer transcript formatting without changing its Core-only boundary.
-- Replace the Code and Habit Tracker foundation pages only when their independent Core routes and module contracts are available.
+- Replace the Code foundation window when its independent Core route and module contract are available.
 - Add Flow-specific Process Monitor controls only if they preserve the existing safe shared-event boundary.
 
 ## Future GUI Panel Improvements
@@ -30,6 +45,7 @@
 - Add AMADEUS-generated callable chat summary when switching/closing chats.
 - Add staged metadata retrieval: title first, description second, summary only when deeper context is requested.
 - Add chat reason/mode only after skills and reasoning profiles define real behavior differences.
+- Add a Full Send Continue action when backend completion metadata reports that the configured output budget was reached.
 - Add per-chat module context, model preference, and reasoning profile later.
 - Add pinned General Chat once project/workspace rules are clearer.
 - Add side-by-side chat comparison only after basic switching remains stable.
@@ -39,6 +55,7 @@
 - Add search/filter controls for memory.
 - Add delete/update buttons after Memory Module supports those actions.
 - Add a “send memory to chat context” / `[panel]` bridge later.
+- Add filtering controls for bounded module metadata display while keeping metadata separate from ordinary chat memory.
 
 ## Current / Panel Future Updates
 
@@ -92,11 +109,21 @@
 - [ ] Avoid coloring full message text because it reduces readability.
 - [ ] Add exact message-reference controls after `[current][number]` exists.
 
+## Mind Map interaction follow-ups
+
+- Add direct drag-to-connect handles, exact linked-object actions, and optional context-budget controls in the Linked tab.
+- Profile large graph repaint/layout behavior on Windows with real PyQt6 rendering.
 
 ## Canvas GUI Roadmap
 
-- Add typed text blocks with stable IDs and direct editing.
-- Add object selection, multi-selection, dragging, resizing, copy/paste, undo, and redo.
-- Add semantic connectors, groups, comments, and branch traversal.
-- Add viewport, selection, branch, and whole-canvas context previews before AMADEUS requests.
+- Multiple lightweight Canvas workspaces with create/switch/rename/archive controls are implemented.
+- Typed text blocks with stable IDs, direct editing, selection, multi-selection, dragging, and persistence are implemented.
+- Semantic lines/arrows with source/target references, labels, comments, editing, and live attached geometry are implemented.
+- Add resizing, copy/paste, undo, redo, layering, and locking controls.
+- Add groups, relation filtering, branch highlighting, and whole-canvas compressed context.
+- Add per-branch send history, retry/regenerate controls, and response-source selection for multi-target sends.
 - Keep Canvas persistence and context logic in `canvas_module`; the GUI should render and forward explicit user actions only.
+
+## Core ownership cleanup — 2026-09-12
+
+- Ownership direction: Keep module windows as presentation; future UI controls use Core routes and shared owner services.

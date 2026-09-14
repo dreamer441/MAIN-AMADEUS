@@ -2,6 +2,7 @@
 
 import json
 import multiprocessing
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -10,11 +11,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 from chat_registry import ChatRegistry
-from flow_chat import FlowChatMessage, FlowChatStore, FlowContextBuilder
+from flow_chat import FlowChatMessage, FlowChatStore, FlowChatMetadataResolver, FlowContextBuilder, FlowCreateChatRequest, FlowReviewContextBuilder, FlowReviewRequest
 from amadeus_core.core import AmadeusCore
 from amadeus_trace import TraceLogger
 from llm_client import OllamaClientError
+from project_file_reader import ProjectFileReader
 from storage import ChatHistoryStore
+from inner_brain import InnerBrainAnalysis
 
 
 def _append_message_in_process(
@@ -51,6 +54,17 @@ class _ListOnlyChatStore:
 
     def load_messages(self) -> None:
         raise AssertionError("ChatRegistry must not load dedicated-chat messages.")
+
+
+class _FakeInnerBrain:
+    """Capture Flow advisory requests while returning one safe read and inert write candidate."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    def analyze_message(self, message: str, route: str = "chat") -> InnerBrainAnalysis:
+        self.calls.append((message, route))
+        return InnerBrainAnalysis(read_annotation="file", suggested_write_actions=("memory", "create"), model="fake")
 
 
 class FlowChatStoreTests(unittest.TestCase):
@@ -385,6 +399,81 @@ class FlowContextAndCoreTests(unittest.TestCase):
         self.assertNotIn("Dedicated secret body", bundle.dedicated_chat_metadata)
         self.assertIn("Do not claim to know, read, or have access", bundle.dedicated_chat_metadata)
 
+    def test_review_request_requires_a_question(self) -> None:
+        self.assertIsNone(FlowReviewRequest.parse("ordinary Flow request"))
+        self.assertIsNone(FlowReviewRequest.parse("/reviewed request"))
+        request = FlowReviewRequest.parse("/review check the patch")
+        self.assertIsNotNone(request)
+        assert request is not None
+        self.assertEqual("check the patch", request.question)
+        with self.assertRaises(ValueError):
+            FlowReviewRequest.parse("/review")
+
+    def test_create_chat_parser_resolves_explicit_metadata_without_llm(self) -> None:
+        llm = _FakeLLM(response='{"title": "Ignored", "description": "Ignored", "priority": "Low"}')
+        request = FlowCreateChatRequest.parse(
+            "/create-chat Build a release checklist; Title: Review; Description: Check patches; Weight: Important"
+        )
+        assert request is not None
+
+        draft = FlowChatMetadataResolver(llm).resolve(request)
+
+        self.assertEqual(("Review", "Check patches", "Important"), (draft.title, draft.description, draft.priority))
+        self.assertEqual([], llm.prompts)
+
+    def test_create_chat_parser_uses_strict_json_and_safe_fallbacks(self) -> None:
+        request = FlowCreateChatRequest.parse("/create-chat Prepare the release")
+        assert request is not None
+        llm = _FakeLLM(response='{"title": "Release", "description": "Prepare release work", "priority": "Critical"}')
+
+        draft = FlowChatMetadataResolver(llm).resolve(request)
+
+        self.assertEqual(("Release", "Prepare release work", "Critical"), (draft.title, draft.description, draft.priority))
+        self.assertIn("Return JSON only", llm.prompts[0])
+        fallback = FlowChatMetadataResolver(_FakeLLM(response="not json")).resolve(request)
+        self.assertEqual(("New Chat", "", "Normal"), (fallback.title, fallback.description, fallback.priority))
+        self.assertIsNone(FlowCreateChatRequest.parse("/create-chats no command"))
+        with self.assertRaisesRegex(ValueError, "Priority must be one of"):
+            FlowCreateChatRequest.parse("/create-chat Create one; Priority: Urgent")
+
+    def test_review_context_reads_docs_before_git_and_omits_unsafe_paths(self) -> None:
+        (self.root / "AMADEUS_CHANGELOG.md").write_text("patch summary", encoding="utf-8")
+        (self.root / "AMADEUS_FUTURE_IMPLEMENTATIONS.md").write_text("future work", encoding="utf-8")
+        (self.root / "safe.py").write_text("safe = True\n", encoding="utf-8")
+        (self.root / "data").mkdir()
+        (self.root / "data" / "private.txt").write_text("private", encoding="utf-8")
+
+        def run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
+            outputs = {
+                ("git", "status", "--short"): "?? safe.py\n?? data/private.txt\n?? data/\n",
+                ("git", "diff", "--name-only"): "../outside.py\n",
+                ("git", "diff", "--stat"): " 1 file changed, 1 insertion(+)\n",
+            }
+            return subprocess.CompletedProcess(command, 0, outputs[tuple(command)], "")
+
+        builder = FlowReviewContextBuilder(self.root, ProjectFileReader(self.root), run_command)
+        context = builder.build(FlowReviewRequest("what changed?"))
+
+        self.assertLess(context.index("[AMADEUS CHANGELOG]"), context.index("[AMADEUS FUTURE IMPLEMENTATIONS]"))
+        self.assertLess(context.index("[AMADEUS FUTURE IMPLEMENTATIONS]"), context.index("[CURRENT GIT STATE]"))
+        self.assertIn("[FILE: safe.py]", context)
+        self.assertNotIn("[FILE: data/private.txt]", context)
+        self.assertIn("omitted 1 ignored/unsafe, 1 unreadable/binary/unsupported", context)
+
+    def test_review_context_continues_when_git_is_unavailable(self) -> None:
+        (self.root / "AMADEUS_CHANGELOG.md").write_text("patch summary", encoding="utf-8")
+        (self.root / "AMADEUS_FUTURE_IMPLEMENTATIONS.md").write_text("future work", encoding="utf-8")
+
+        def unavailable_git(_command: list[str]) -> subprocess.CompletedProcess[str]:
+            raise OSError("git executable unavailable")
+
+        builder = FlowReviewContextBuilder(self.root, ProjectFileReader(self.root), unavailable_git)
+        context = builder.build(FlowReviewRequest("what changed?"))
+
+        self.assertIn("[AMADEUS CHANGELOG]\npatch summary", context)
+        self.assertIn("[AMADEUS FUTURE IMPLEMENTATIONS]\nfuture work", context)
+        self.assertIn("Git unavailable or command failed.", context)
+
     def test_context_formats_an_empty_registry_without_history(self) -> None:
         registry = ChatRegistry(_ListOnlyChatStore([]))  # type: ignore[arg-type]
         bundle = FlowContextBuilder(FlowChatStore(self.root), registry).build_for_message("hello")
@@ -421,6 +510,161 @@ class FlowContextAndCoreTests(unittest.TestCase):
         self.assertIn("Private project", prompt)
         self.assertIn("Metadata is visible.", prompt)
         self.assertNotIn("Dedicated body must not leak.", prompt)
+
+    def test_review_command_sends_documentation_and_git_context_to_llm(self) -> None:
+        (self.root / "AMADEUS_CHANGELOG.md").write_text("patch summary", encoding="utf-8")
+        (self.root / "AMADEUS_FUTURE_IMPLEMENTATIONS.md").write_text("future work", encoding="utf-8")
+        llm = _FakeLLM()
+        core = AmadeusCore(llm_client=llm, project_root=self.root)
+
+        core.handle_flow_message("/review does this patch work?")
+
+        prompt = llm.prompts[-1]
+        self.assertIn("[AMADEUS CHANGELOG]", prompt)
+        self.assertIn("[AMADEUS FUTURE IMPLEMENTATIONS]", prompt)
+        self.assertIn("[CURRENT GIT STATE]", prompt)
+        self.assertIn("does this patch work?", prompt)
+        self.assertNotIn("/review does this patch work?", prompt)
+
+    def test_malformed_review_returns_locally_without_llm_or_history(self) -> None:
+        llm = _FakeLLM()
+        core = AmadeusCore(llm_client=llm, project_root=self.root)
+
+        result = core.handle_flow_message("/review")
+
+        self.assertEqual("Use /review followed by a review question.", result["response"])
+        self.assertEqual([], llm.prompts)
+        self.assertEqual([], core.flow_chat_store.load_messages())
+
+    def test_create_chat_command_returns_approval_request_without_owner_write(self) -> None:
+        llm = _FakeLLM()
+        core = AmadeusCore(llm_client=llm, project_root=self.root)
+
+        result = core.handle_flow_message(
+            "/create-chat Make a review workspace; Title: Patch Review; Description: Check patches; Weight: Critical"
+        )
+
+        approval = result["approval_request"]
+        assert isinstance(approval, dict)
+        self.assertEqual(("Patch Review", "Check patches", "Critical"), (approval["display_fields"]["title"], approval["display_fields"]["description"], approval["display_fields"]["priority"]))
+        self.assertEqual(1, len(core.list_chats()))
+        self.assertEqual([], llm.prompts)
+        self.assertEqual("", result["response"])
+        core.approve_pending_action(approval["action_id"])
+        self.assertEqual(2, len(core.list_chats()))
+
+    def test_malformed_create_chat_returns_locally_without_llm_or_history(self) -> None:
+        llm = _FakeLLM()
+        core = AmadeusCore(llm_client=llm, project_root=self.root)
+
+        result = core.handle_flow_message("/create-chat")
+
+        self.assertEqual("Invalid creation request.", result["response"])
+        self.assertEqual([], llm.prompts)
+        self.assertEqual([], core.flow_chat_store.load_messages())
+
+    def test_sheet_annotation_returns_approval_without_owner_write(self) -> None:
+        llm = _FakeLLM(response='{"title": "Planning Notes"}')
+        core = AmadeusCore(llm_client=llm, project_root=self.root)
+
+        created = core.handle_flow_message("[sheet][create] Draft planning notes")
+
+        sheets = core.sheet_service.list_sheets(scope="global")
+        self.assertEqual("", created["response"])
+        self.assertEqual(0, len(sheets))
+        self.assertIn("approval_request", created)
+        core.approve_pending_action(created["approval_request"]["action_id"])
+        sheets = core.sheet_service.list_sheets(scope="global")
+        self.assertEqual(1, len(sheets))
+        self.assertEqual("global", sheets[0].scope)
+        self.assertIsNone(sheets[0].chat_id)
+
+    def test_memory_annotation_defaults_global_or_links_explicitly(self) -> None:
+        llm = _FakeLLM()
+        core = AmadeusCore(llm_client=llm, project_root=self.root)
+
+        global_memory = core.handle_flow_message("[memory][save] Preserve source ownership")
+        memory = core.handle_flow_message("[memory][save] Link this chat; scope: chat")
+
+        self.assertEqual("chat", memory["approval_request"]["scope"])
+        self.assertEqual(core.get_current_chat_id(), memory["approval_request"]["linked_chat_id"])
+        core.approve_pending_action(global_memory["approval_request"]["action_id"])
+        core.approve_pending_action(memory["approval_request"]["action_id"])
+
+        self.assertEqual(1, len(core.memory_service.list_global_memory()))
+        self.assertEqual(1, len(core.memory_service.list_chat_memory(core.get_current_chat_id())))
+        self.assertEqual(0, len(llm.prompts))
+
+    def test_approve_is_not_a_flow_command(self) -> None:
+        llm = _FakeLLM()
+        core = AmadeusCore(llm_client=llm, project_root=self.root)
+
+        core.handle_flow_message("/approve unknown")
+
+        self.assertEqual(1, len(llm.prompts))
+
+    def test_flow_and_dedicated_chat_share_creation_suggestions(self) -> None:
+        core = AmadeusCore(llm_client=_FakeLLM(), project_root=self.root)
+
+        flow_root = {row["insert_text"] for row in core.get_flow_annotation_suggestions("/")}
+        flow_brackets = {row["insert_text"] for row in core.get_flow_annotation_suggestions("[memory]")}
+        normal_root = {row["insert_text"] for row in core.get_annotation_suggestions("/")}
+
+        self.assertIn("/create-chat ", flow_root)
+        self.assertIn("[memory][global]", flow_brackets)
+        self.assertEqual(flow_root, normal_root)
+
+    def test_normal_flow_message_has_no_review_context(self) -> None:
+        llm = _FakeLLM()
+        core = AmadeusCore(llm_client=llm, project_root=self.root)
+
+        core.handle_flow_message("ordinary Flow request")
+
+        self.assertNotIn("[CURRENT GIT STATE]", llm.prompts[-1])
+
+    def test_plain_flow_inference_adds_safe_read_context_without_executing_write_candidates(self) -> None:
+        llm = _FakeLLM()
+        inner_brain = _FakeInnerBrain()
+        core = AmadeusCore(llm_client=llm, project_root=self.root, inner_brain_service=inner_brain)
+        write_calls: list[tuple[object, ...]] = []
+        core.flow_chat_service.create_workspace = lambda *args: write_calls.append(args)
+
+        core.handle_flow_message("show safe project context")
+
+        self.assertEqual([("show safe project context", "flow")], inner_brain.calls)
+        self.assertNotIn("[SAFE INFERRED READ CONTEXT]", llm.prompts[-1])
+        self.assertEqual([], write_calls)
+
+    def test_explicit_flow_commands_skip_inner_brain_inference(self) -> None:
+        llm = _FakeLLM()
+        inner_brain = _FakeInnerBrain()
+        core = AmadeusCore(llm_client=llm, project_root=self.root, inner_brain_service=inner_brain)
+
+        for command in (
+            "/review summarize this change",
+            "/create-chat create a planning chat",
+            "[sheet][create] project notes",
+            "[memory][save] remember this fact",
+        ):
+            core.handle_flow_message(command)
+
+        self.assertEqual([], inner_brain.calls)
+
+    def test_explicit_metadata_is_rejected_without_registry_execution_or_memory_payload(self) -> None:
+        module = self.root / "sample_module"
+        module.mkdir()
+        (module / "README.md").write_text("# Sample\n", encoding="utf-8")
+        (module / "FEATURES.md").write_text("must not reach Flow", encoding="utf-8")
+        (module / "FUTURE_UPDATES.md").write_text("future", encoding="utf-8")
+        llm = _FakeLLM()
+        core = AmadeusCore(llm_client=llm, project_root=self.root)
+
+        result = core.handle_flow_message("[metadata][module][sample_module][features]")
+
+        self.assertEqual("Module metadata is available in dedicated chat, not Flow Chat.", result["response"])
+        self.assertIsNone(result["side_panel"])
+        self.assertEqual([], llm.prompts)
+        self.assertNotIn("must not reach Flow", str(core.flow_chat_store.load_messages()))
 
     def test_core_creates_and_edits_typed_chat_metadata(self) -> None:
         core = AmadeusCore(llm_client=_FakeLLM(), project_root=self.root)

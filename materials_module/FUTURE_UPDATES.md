@@ -15,3 +15,7 @@
 - [ ] Add material comments.
 - [ ] Add material summaries as callable context.
 - [ ] Add Mind Map node links for materials.
+
+## Core ownership cleanup — 2026-09-12
+
+- Ownership direction: Keep selected-material execution injected rather than importing Core or Chat internals.

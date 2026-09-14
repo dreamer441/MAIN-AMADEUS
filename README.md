@@ -2,7 +2,9 @@
 
 AMADEUS is a local-first personal AI project designed to grow as a clean modular desktop system.
 
-This first rebuild is intentionally small. It creates a working shell with:
+The desktop system uses explicit Core routes and module-owned execution. See [the current architecture](docs/ARCHITECTURE.md) and [the Core cleanup report](docs/CORE_CLEANUP_REPORT.md) for ownership and manual checks.
+
+The original shell foundations are:
 
 - AMADEUS Core
 - AMADEUS Chat module
@@ -14,7 +16,7 @@ This first rebuild is intentionally small. It creates a working shell with:
 
 ## Current Behavior
 
-The app opens on the Flow Chat home page. The persistent sidebar switches between Flow Chat, dedicated Chats, Code, Mind Map, Canvas, and Habit Tracker. Flow and dedicated Chats are separate conversations: Flow has its own local history, while the existing dedicated-chat selector, New Chat/Delete Chat controls, annotations, and right-side workspace remain under Chats. Canvas currently provides its first real infinite-style workspace shell; structured brainstorming objects and AMADEUS interaction are the next implementation phases. The Process Monitor shows real execution events from the latest request, not hidden reasoning.
+The app opens on the Flow Chat home page. The persistent sidebar switches between Flow Chat, dedicated Chats, Code, Mind Map, Canvas, and Habit Tracker. Flow and dedicated Chats are separate conversations: Flow has its own local history, while the existing dedicated-chat selector, New Chat/Delete Chat controls, annotations, and right-side workspace remain under Chats. Canvas provides typed spatial brainstorming, semantic connections, target-focused context preview, and direct AMADEUS responses inside the workspace. The Process Monitor shows real execution events from the latest request, not hidden reasoning.
 
 Chat now uses the local Ollama LLM client. The default lightweight model is `llama3.2:latest`.
 
@@ -58,9 +60,11 @@ This version includes a simple local Ollama LLM connection, the AMADEUS Identity
 
 ## Mind Map
 
-The persistent Mind Map page provides a local SQLite graph at `data/mindmap/mind_map.sqlite3` with node/link CRUD, position persistence, search, bounded-neighborhood retrieval, source-node upsert, JSON import/export, and a zoomable layout canvas. Import accepts only AMADEUS Mind Map JSON exports, so chat exports and text files are rejected before they can change the graph. The GUI calls Core only; Core delegates graph behavior to the registered `mind_map` module. Graph mutation events report real ordered operation boundaries while excluding private titles, contents, labels, raw errors, and hidden reasoning. Mind Map runtime data is local and ignored by Git.
+The persistent Mind Map page provides a local SQLite graph at `data/mindmap/mind_map.sqlite3` with node/link CRUD, position persistence, search, bounded-neighborhood retrieval, source-node upsert, JSON import/export, and a living force-directed relevance canvas. The reconstructed interface uses type-coloured nodes, importance/relevance prominence, central-node gravity, typed relationship physics, local-neighborhood highlighting, relationship evidence, and resizable Explore/Graph/Context panels. Import accepts only AMADEUS Mind Map JSON exports, so chat exports and text files are rejected before they can change the graph. The GUI calls Core only; Core delegates graph behavior to the registered `mind_map` module. Graph mutation events report real ordered operation boundaries while excluding private titles, contents, labels, raw errors, and hidden reasoning. Mind Map runtime data is local and ignored by Git.
 
-Explicit Mind Map retrieval is available in dedicated Chats: `[mindmap][search text] your question` searches up to 10 matching nodes, while `[mindmap] your question` uses up to 10 recent available nodes. AMADEUS labels this as retrieved Mind Map context and uses it as the source for that request only. No-match retrieval still reaches the normal LLM with an explicit no-context block; retrieval errors return a safe response. Chat and Annotation Module use only the Mind Map public facade, never SQLite.
+Selected dedicated chats can be projected into the graph through **Import Chats**. Each imported node keeps a source reference back to Chat Registry, repeated imports update the same graph node, and double-clicking the node asks MainWindow to reopen its original chat. Source-backed sheet, material, and message nodes use the same navigation boundary.
+
+Explicit Mind Map retrieval is available in dedicated Chats: `[mindmap][search text] your question` retrieves bounded search seeds and their explicit graph neighborhood, while `[mindmap] your question` begins from recent nodes. AMADEUS receives node content, source references, and retrieved relationship direction/type/strength/confidence/evidence. No-match retrieval still reaches the normal LLM with an explicit no-context block; retrieval errors return a safe response. Chat and Annotation Module use only the Mind Map public facade, never SQLite.
 
 ## Annotations
 
@@ -219,7 +223,10 @@ Exports are not active memory. They are stored references that AMADEUS can use o
 
 The right panel now includes **Side Ask** and **Comments** tabs. Side Ask is a temporary secondary question flow that can use selected chat text as context, then optionally save its Q&A into the current chat or create a new chat from it. Comments let Dato select chat text and attach a simple note without mixing it with memory, reward, or importance yet.
 
+## Mind Map ↔ Chat workspace synchronization
+
+New dedicated chats, chat-scoped sheets, comments, and explicit memory entries can now appear as stable source-backed Mind Map nodes. Direct graph links to the active chat are automatically available to normal Chat unless that relationship disables injection. The right-panel **Linked** tab shows exactly which nodes are active. Creating a `chat`, `sheet`, `comment`, or `memory` node in Mind Map can create the matching real AMADEUS object; all other node types remain graph-only. See `MINDMAP_CHAT_SYNC_PATCH_NOTES.md` for behavior, limits, and tests.
 
 ## Canvas Foundation
 
-The new **Canvas** page is a first-class Core-registered module space rather than a generic placeholder. It provides a persistent large grid with drag-to-pan and cursor-centred wheel zoom. The Canvas is intentionally defined as a structured future scene, not a screenshot-only whiteboard. Typed blocks, selection, connectors, persistence, viewport context, Canvas conversations, handwriting, and Mind Map conversion are documented as future phases and are not yet presented as working features.
+The **Canvas** page is a first-class Core-registered spatial conversation workspace. It provides a persistent large grid, typed movable blocks, semantic lines/arrows, root and graph-aware context previews, an optional instruction field, and `Send Changes to AMADEUS`. AMADEUS answers changed or selected targets using the viewport as supporting context, inserts a movable response block with a source arrow, and records the exact context/prompt/model/run only after a successful atomic commit. Handwriting, images, groups, undo/redo, and Mind Map conversion remain future phases.

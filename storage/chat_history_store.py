@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+from response_modes import ResponseMode
 
 ChatPriority = Literal["Critical", "Important", "Normal", "Low", "Ignore"]
 ChatPurpose = Literal["General", "Project", "Study", "Development", "Other"]
@@ -63,6 +64,21 @@ class ChatMetadata:
     priority: ChatPriority = "Normal"
     purpose: ChatPurpose = "General"
     scope: ChatScope = "Local"
+    response_mode: str = ResponseMode.NORMAL.value
+    inner_brain_analysis: "ChatInnerBrainAnalysis | None" = None
+
+
+@dataclass(frozen=True)
+class ChatInnerBrainAnalysis:
+    """Explicitly generated analysis persisted beside a chat, never in its transcript."""
+
+    generated_at: str
+    model: str
+    title: str = ""
+    description: str = ""
+    short_bullets: tuple[str, ...] = ()
+    detailed_summary: str = ""
+    export_id: str = ""
 
 
 class ChatHistoryStore:
@@ -91,6 +107,14 @@ class ChatHistoryStore:
         index = self._read_index()
         chats = [self._metadata_from_raw(raw_chat) for raw_chat in index.get("chats", [])]
         valid_chats = [chat for chat in chats if chat is not None]
+        migrated = False
+        for raw_chat, metadata in zip(index.get("chats", []), chats):
+            if isinstance(raw_chat, dict) and metadata is not None and raw_chat.get("response_mode") != metadata.response_mode:
+                # Old or invalid rows are normalized on their first safe metadata read.
+                raw_chat["response_mode"] = metadata.response_mode
+                migrated = True
+        if migrated:
+            self._write_index(index)
 
         # Newest updated chats are easiest to find near the top of the selector.
         valid_chats.sort(key=lambda chat: chat.updated_at, reverse=True)
@@ -145,6 +169,7 @@ class ChatHistoryStore:
         priority: ChatPriority = "Normal",
         purpose: ChatPurpose = "General",
         scope: ChatScope = "Local",
+        response_mode: ResponseMode | str = ResponseMode.NORMAL,
     ) -> ChatMetadata:
         """Create a new empty chat and make it the active chat.
 
@@ -159,6 +184,7 @@ class ChatHistoryStore:
         clean_priority = self._validate_choice("priority", priority, CHAT_PRIORITIES)
         clean_purpose = self._validate_choice("purpose", purpose, CHAT_PURPOSES)
         clean_scope = self._validate_choice("scope", scope, CHAT_SCOPES)
+        clean_response_mode = ResponseMode.parse(response_mode).value
         metadata = ChatMetadata(
             chat_id=chat_id,
             title=clean_title,
@@ -169,6 +195,7 @@ class ChatHistoryStore:
             priority=clean_priority,  # type: ignore[arg-type]
             purpose=clean_purpose,  # type: ignore[arg-type]
             scope=clean_scope,  # type: ignore[arg-type]
+            response_mode=clean_response_mode,
         )
 
         index = self._read_index()
@@ -191,6 +218,8 @@ class ChatHistoryStore:
         priority: ChatPriority | None = None,
         purpose: ChatPurpose | None = None,
         scope: ChatScope | None = None,
+        response_mode: ResponseMode | str | None = None,
+        inner_brain_analysis: ChatInnerBrainAnalysis | None = None,
     ) -> ChatMetadata:
         """Update editable chat metadata fields.
 
@@ -209,6 +238,8 @@ class ChatHistoryStore:
             priority=self._validate_choice("priority", priority, CHAT_PRIORITIES) if priority is not None else existing.priority,  # type: ignore[arg-type]
             purpose=self._validate_choice("purpose", purpose, CHAT_PURPOSES) if purpose is not None else existing.purpose,  # type: ignore[arg-type]
             scope=self._validate_choice("scope", scope, CHAT_SCOPES) if scope is not None else existing.scope,  # type: ignore[arg-type]
+            response_mode=ResponseMode.parse(response_mode).value if response_mode is not None else existing.response_mode,
+            inner_brain_analysis=inner_brain_analysis if inner_brain_analysis is not None else existing.inner_brain_analysis,
             created_at=existing.created_at,
             updated_at=self._now(),
         )
@@ -356,6 +387,8 @@ class ChatHistoryStore:
         priority = raw_chat.get("priority") if raw_chat.get("priority") in CHAT_PRIORITIES else "Normal"
         purpose = raw_chat.get("purpose") if raw_chat.get("purpose") in CHAT_PURPOSES else "General"
         scope = raw_chat.get("scope") if raw_chat.get("scope") in CHAT_SCOPES else "Local"
+        response_mode = ResponseMode.parse(raw_chat.get("response_mode")).value
+        analysis = self._analysis_from_raw(raw_chat.get("inner_brain_analysis"))
         return ChatMetadata(
             chat_id=chat_id,
             title=title,
@@ -366,11 +399,13 @@ class ChatHistoryStore:
             priority=priority,  # type: ignore[arg-type]
             purpose=purpose,  # type: ignore[arg-type]
             scope=scope,  # type: ignore[arg-type]
+            response_mode=response_mode,
+            inner_brain_analysis=analysis,
         )
 
-    def _metadata_to_raw(self, metadata: ChatMetadata) -> dict[str, str]:
+    def _metadata_to_raw(self, metadata: ChatMetadata) -> dict[str, Any]:
         """Convert metadata to the JSON index shape."""
-        return {
+        raw: dict[str, Any] = {
             "chat_id": metadata.chat_id,
             "title": metadata.title,
             "description": metadata.description,
@@ -378,9 +413,40 @@ class ChatHistoryStore:
             "priority": metadata.priority,
             "purpose": metadata.purpose,
             "scope": metadata.scope,
+            "response_mode": metadata.response_mode,
             "created_at": metadata.created_at,
             "updated_at": metadata.updated_at,
         }
+        if metadata.inner_brain_analysis is not None:
+            raw["inner_brain_analysis"] = {
+                "generated_at": metadata.inner_brain_analysis.generated_at,
+                "model": metadata.inner_brain_analysis.model,
+                "title": metadata.inner_brain_analysis.title,
+                "description": metadata.inner_brain_analysis.description,
+                "short_bullets": list(metadata.inner_brain_analysis.short_bullets),
+                "detailed_summary": metadata.inner_brain_analysis.detailed_summary,
+                "export_id": metadata.inner_brain_analysis.export_id,
+            }
+        return raw
+
+    @staticmethod
+    def _analysis_from_raw(raw: Any) -> ChatInnerBrainAnalysis | None:
+        if not isinstance(raw, dict):
+            return None
+        generated_at = raw.get("generated_at")
+        model = raw.get("model")
+        if not isinstance(generated_at, str) or not isinstance(model, str) or not generated_at or not model:
+            return None
+        bullets = raw.get("short_bullets")
+        return ChatInnerBrainAnalysis(
+            generated_at=generated_at,
+            model=model,
+            title=raw.get("title") if isinstance(raw.get("title"), str) else "",
+            description=raw.get("description") if isinstance(raw.get("description"), str) else "",
+            short_bullets=tuple(item for item in bullets[:8] if isinstance(item, str) and item) if isinstance(bullets, list) else (),
+            detailed_summary=raw.get("detailed_summary") if isinstance(raw.get("detailed_summary"), str) else "",
+            export_id=raw.get("export_id") if isinstance(raw.get("export_id"), str) else "",
+        )
 
     def _replace_metadata(self, metadata: ChatMetadata) -> None:
         """Replace one chat metadata row while preserving the rest of the index."""

@@ -46,6 +46,8 @@
 - Chat prompt construction now tells the LLM that callable context selected by annotations is the primary source for that request.
 - This especially protects `[export][use][chat][range] prompt` from being overridden by current-chat assumptions.
 - `[mindmap]` retrieval uses this same callable-context boundary. Chat receives a bounded, explicitly labeled Mind Map source block from Annotation Module and never reads graph storage or performs graph searches itself.
+- Linked and callable Mind Map records are treated as literal source data: Chat must not invent labels, categories, IDs, relationships, descriptions, or sheet contents.
+- Exact linked/retrieved graph records override older assistant guesses about those same nodes, and non-memory nodes may not be described as memory.
 
 ## Flow Prompt Reuse
 
@@ -53,3 +55,9 @@
 - Flow receives preformatted Layer 0 recent Flow history and Layer 1 dedicated-chat registry metadata as distinct context sections.
 - Layer 1 contains only chat id, title, and description; Flow never injects dedicated-chat message bodies.
 - Flow LLM request and response boundaries participate in the same safe shared Process Monitor event lifecycle as normal chat.
+
+## Fixed Response Modes
+
+- Dedicated Chats use the canonical `none`, `short`, `normal`, `large`, and `full_send` policies; Flow remains `normal`.
+- Chat appends the resolved policy instruction to the system prompt and passes its hard output budget to compatible backends without changing model routing.
+- `none` still executes the normal request path but returns no normal user-facing response.

@@ -24,3 +24,7 @@ data/sheets/
 data/exports/
 data/flow_chat/
 data/mindmap/
+
+# Every local module store, including Canvas and Habit Tracker, is runtime data.
+data/
+.pytest_cache/

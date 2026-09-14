@@ -83,6 +83,25 @@ class CommentsModuleTests(unittest.TestCase):
         raw_records = json.loads(path.read_text(encoding="utf-8"))
         self.assertNotIn("comment_type", raw_records[0])
 
+    def test_global_comment_is_unlinked_and_legacy_chat_scope_is_migrated(self) -> None:
+        global_comment = self.service.add_comment(chat_id=None, comment="Global note", scope="global")
+        legacy_path = self.root / "data/comments/comments.json"
+
+        self.assertIsNone(global_comment.chat_id)
+        self.assertEqual("global", global_comment.scope)
+        self.assertEqual([], self.service.list_for_chat("chat_1"))
+        self.assertEqual([global_comment], self.service.list_global())
+        raw = json.loads(legacy_path.read_text(encoding="utf-8"))
+        self.assertIsNone(raw[0]["chat_id"])
+        self.assertEqual("global", raw[0]["scope"])
+
+        legacy_path.write_text(json.dumps([{
+            "comment_id": "comment_0002", "chat_id": "chat_1", "comment": "Legacy chat note.",
+            "selected_text": "", "created_at": "2026-07-14T00:00:00+00:00",
+        }]), encoding="utf-8")
+        migrated = self.service.list_for_chat("chat_1")
+        self.assertEqual(("chat", "chat_1"), (migrated[0].scope, migrated[0].chat_id))
+
 
 if __name__ == "__main__":
     unittest.main()

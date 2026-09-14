@@ -31,6 +31,19 @@ class MemoryStore:
         """Append one cross-chat memory entry."""
         return self._append_memory(scope="global", content=content, path=self.global_memory_path, source_chat_id=source_chat_id)
 
+    def add_global_memory_with_id(self, memory_id: str, content: str, source_chat_id: str | None = None) -> MemoryEntry:
+        """Append a caller-stable global entry for explicitly approved source memory."""
+        clean_id = memory_id.strip()
+        if not clean_id:
+            raise ValueError("Memory id cannot be empty.")
+        now = self._now()
+        entry = MemoryEntry(clean_id, "global", content.strip(), now, now, source_chat_id)
+        if not entry.content:
+            raise ValueError("Memory content cannot be empty.")
+        with self.global_memory_path.open("a", encoding="utf-8") as memory_file:
+            memory_file.write(json.dumps(entry.to_dict(), ensure_ascii=False) + "\n")
+        return entry
+
     def add_chat_memory(self, chat_id: str, content: str) -> MemoryEntry:
         """Append one memory entry that belongs only to a specific chat."""
         safe_chat_id = self._safe_chat_id(chat_id)
@@ -46,6 +59,54 @@ class MemoryStore:
         """Return all active memories for one chat."""
         safe_chat_id = self._safe_chat_id(chat_id)
         return self._read_entries(self.chat_memory_directory / f"{safe_chat_id}.jsonl")
+
+    def list_all_memory(self) -> list[MemoryEntry]:
+        """Return legacy entries, including soft-deleted rows, for safe migration."""
+        entries: list[MemoryEntry] = []
+        for path in self._memory_paths():
+            entries.extend(self._read_entries(path, active_only=False))
+        return entries
+
+    def get_memory(self, memory_id: str) -> MemoryEntry | None:
+        """Return one memory by stable id across global and chat scopes."""
+        for path in self._memory_paths():
+            for entry in self._read_entries(path, active_only=False):
+                if entry.memory_id == memory_id:
+                    return entry
+        return None
+
+    def update_memory(self, memory_id: str, content: str) -> MemoryEntry:
+        """Update one memory in-place while preserving its stable identity."""
+        clean_content = content.strip()
+        if not clean_content:
+            raise ValueError("Memory content cannot be empty.")
+        return self._rewrite_memory(
+            memory_id,
+            lambda entry: MemoryEntry(
+                memory_id=entry.memory_id,
+                scope=entry.scope,
+                content=clean_content,
+                created_at=entry.created_at,
+                updated_at=self._now(),
+                source_chat_id=entry.source_chat_id,
+                status=entry.status,
+            ),
+        )
+
+    def delete_memory(self, memory_id: str) -> MemoryEntry:
+        """Soft-delete one memory so JSONL audit history remains inspectable."""
+        return self._rewrite_memory(
+            memory_id,
+            lambda entry: MemoryEntry(
+                memory_id=entry.memory_id,
+                scope=entry.scope,
+                content=entry.content,
+                created_at=entry.created_at,
+                updated_at=self._now(),
+                source_chat_id=entry.source_chat_id,
+                status="deleted",
+            ),
+        )
 
     def _append_memory(self, scope: str, content: str, path: Path, source_chat_id: str | None) -> MemoryEntry:
         """Write one memory entry as a JSONL row and return the parsed object."""
@@ -68,8 +129,8 @@ class MemoryStore:
             memory_file.write(json.dumps(entry.to_dict(), ensure_ascii=False) + "\n")
         return entry
 
-    def _read_entries(self, path: Path) -> list[MemoryEntry]:
-        """Read active memory entries while tolerating corrupted JSONL rows."""
+    def _read_entries(self, path: Path, *, active_only: bool = True) -> list[MemoryEntry]:
+        """Read memory entries while tolerating corrupted JSONL rows."""
         if not path.exists():
             return []
 
@@ -80,9 +141,41 @@ class MemoryStore:
             except json.JSONDecodeError:
                 continue
             entry = MemoryEntry.from_dict(raw)
-            if entry is not None and entry.status == "active":
+            if entry is not None and (not active_only or entry.status == "active"):
                 entries.append(entry)
         return entries
+
+    def _memory_paths(self) -> list[Path]:
+        return [self.global_memory_path, *sorted(self.chat_memory_directory.glob("*.jsonl"))]
+
+    def _rewrite_memory(self, memory_id: str, transform) -> MemoryEntry:
+        clean_id = str(memory_id or "").strip()
+        if not clean_id:
+            raise ValueError("Memory id cannot be empty.")
+        for path in self._memory_paths():
+            if not path.exists():
+                continue
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            rewritten: list[str] = []
+            updated: MemoryEntry | None = None
+            for line in lines:
+                try:
+                    raw: Any = json.loads(line)
+                except json.JSONDecodeError:
+                    rewritten.append(line)
+                    continue
+                entry = MemoryEntry.from_dict(raw)
+                if entry is not None and entry.memory_id == clean_id:
+                    updated = transform(entry)
+                    rewritten.append(json.dumps(updated.to_dict(), ensure_ascii=False))
+                else:
+                    rewritten.append(line)
+            if updated is not None:
+                temporary = path.with_suffix(path.suffix + ".tmp")
+                temporary.write_text("\n".join(rewritten) + ("\n" if rewritten else ""), encoding="utf-8")
+                temporary.replace(path)
+                return updated
+        raise KeyError(f"Unknown memory id: {clean_id}")
 
     def _safe_chat_id(self, chat_id: str) -> str:
         """Keep chat ids safe because they become memory filenames."""

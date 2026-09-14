@@ -63,6 +63,9 @@ class MemoryAnnotation:
             )
             panel_scope = "chat"
 
+        if context.memory_saved_callback is not None:
+            context.memory_saved_callback(entry)
+
         return AnnotationResult(
             response=response,
             side_panel=context.memory_service.build_panel_payload(
@@ -91,6 +94,7 @@ class MemoryAnnotation:
             "* `[memory][list]` - open all memory in the right panel\n"
             "* `[memory][list][global]` - open global memory\n"
             "* `[memory][list][chat]` - open chat memory\n\n"
+            "* `[memory][save] text` - prepare memory for approval\n\n"
             "Memory is explicit in V1. AMADEUS will not save normal conversation automatically."
         )
 

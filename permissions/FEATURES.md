@@ -1,5 +1,9 @@
 # Permissions Features
 
-- No implemented features yet.
-
-This module is intentionally a placeholder. Risky actions are not implemented yet, so AMADEUS should remain read-only for project inspection and should not edit files autonomously.
+- Existing chat, sheet, comment, memory, export and Habit proposals use PermissionGuard.
+- Owner callbacks are explicitly registered at application startup.
+- Pending records are bounded, expiring, integrity-checked and process-local.
+- Request fields and chat scope are captured before approval.
+- Decline never dispatches; approval consumes a record before owner execution.
+- Unknown, expired, altered or already-used approvals are rejected.
+- Legacy pending-action imports remain compatible.

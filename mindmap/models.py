@@ -173,3 +173,23 @@ class GraphNeighborhood:
             "nodes": [node.to_dict() for node in self.nodes],
             "links": [link.to_dict() for link in self.links],
         }
+
+
+@dataclass(frozen=True, slots=True)
+class GraphContextPackage:
+    """Bounded graph context selected for an LLM or reasoning consumer."""
+
+    query: str
+    seed_node_ids: tuple[str, ...]
+    nodes: tuple[GraphNode, ...]
+    links: tuple[GraphLink, ...]
+    depth: int = 1
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "query": self.query,
+            "seed_node_ids": list(self.seed_node_ids),
+            "depth": self.depth,
+            "nodes": [node.to_dict() for node in self.nodes],
+            "links": [link.to_dict() for link in self.links],
+        }

@@ -1,8 +1,5 @@
 # Permissions Future Updates
 
-- Classify risky actions.
-- Require approval for system changes.
-- Record permission decisions clearly.
-- Support reversible actions before irreversible actions.
-- Add permission-aware file editing only after read-only inspection is stable.
-- Add Process Monitor events for approval requested, approved, denied, and action executed.
+- Define capability policies before adding filesystem writes, shell execution or skill actions.
+- Extend owner registration only alongside clear validation and user-visible approval contracts.
+- Keep model intent advisory; this module is not yet a general system sandbox.

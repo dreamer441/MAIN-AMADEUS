@@ -1,9 +1,11 @@
 """Persistent Flow Chat home view that delegates all work to Core."""
 
 from PyQt6.QtCore import QObject, QThread, Qt, pyqtSignal
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QTextEdit, QVBoxLayout, QWidget
+from PyQt6.QtGui import QFont, QTextCharFormat, QTextCursor
+from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QTextEdit, QVBoxLayout, QWidget
 
 from amadeus_core import AmadeusCore
+from amadeus_gui.approval_dialog import ActionApprovalDialog
 
 
 class FlowChatResponseWorker(QObject):
@@ -36,7 +38,31 @@ class FlowMessageInput(QTextEdit):
 
     send_requested = pyqtSignal()
 
+    def configure_suggestion_keys(self, is_visible, move_selection, apply_selection, hide_suggestions) -> None:
+        """Use the dedicated Chat popup key contract without coupling GUI views."""
+        self._suggestions_visible = is_visible
+        self._move_suggestion_selection = move_selection
+        self._apply_suggestion_selection = apply_selection
+        self._hide_suggestions = hide_suggestions
+
     def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt uses camelCase names.
+        if hasattr(self, "_suggestions_visible") and self._suggestions_visible():
+            if event.key() == Qt.Key.Key_Down:
+                self._move_suggestion_selection(1)
+                event.accept()
+                return
+            if event.key() == Qt.Key.Key_Up:
+                self._move_suggestion_selection(-1)
+                event.accept()
+                return
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Tab):
+                self._apply_suggestion_selection()
+                event.accept()
+                return
+            if event.key() == Qt.Key.Key_Escape:
+                self._hide_suggestions()
+                event.accept()
+                return
         is_enter = event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
         has_shift = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
         if is_enter and not has_shift:
@@ -49,6 +75,9 @@ class FlowMessageInput(QTextEdit):
 class FlowChatView(QWidget):
     """The persistent, history-backed Flow conversation without chat-management controls."""
 
+    chat_created = pyqtSignal(str)
+    approval_completed = pyqtSignal(object)
+
     def __init__(self, core: AmadeusCore, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.core = core
@@ -57,6 +86,7 @@ class FlowChatView(QWidget):
         self._latest_trace_events: list[dict[str, object]] = []
         self._latest_trace_text = "Process Monitor will show the latest Flow trace here."
         self._latest_trace_detailed = self._latest_trace_text
+        self._applying_suggestion = False
         self._build_ui()
         self._load_history()
 
@@ -101,10 +131,21 @@ class FlowChatView(QWidget):
         self.status_label.setStyleSheet("color: #666; padding: 4px;")
         input_row = QHBoxLayout()
         self.message_input = FlowMessageInput()
-        self.message_input.setPlaceholderText("Type a message for Flow... Enter = send, Shift+Enter = new line")
+        self.message_input.setPlaceholderText("Type a message for Flow... Enter = send, Shift+Enter = new line, / = annotations")
         self.message_input.setMinimumHeight(70)
         self.message_input.setMaximumHeight(130)
         self.message_input.send_requested.connect(self.send_message)
+        self.message_input.textChanged.connect(self._update_annotation_suggestions)
+        self.annotation_list = QListWidget()
+        self.annotation_list.setMaximumHeight(130)
+        self.annotation_list.hide()
+        self.annotation_list.itemClicked.connect(self._apply_annotation_suggestion)
+        self.message_input.configure_suggestion_keys(
+            lambda: not self.annotation_list.isHidden(),
+            self._move_annotation_suggestion,
+            self._apply_selected_annotation,
+            self.annotation_list.hide,
+        )
         self.send_button = QPushButton("Send")
         self.send_button.clicked.connect(self.send_message)
         input_row.addWidget(self.message_input)
@@ -114,7 +155,52 @@ class FlowChatView(QWidget):
         layout.addWidget(identity)
         layout.addLayout(content)
         layout.addWidget(self.status_label)
+        layout.addWidget(self.annotation_list)
         layout.addLayout(input_row)
+
+    def _update_annotation_suggestions(self) -> None:
+        """Populate Flow's shared annotation popup through the Core facade."""
+        if self._applying_suggestion:
+            return
+        suggestions = self.core.get_flow_annotation_suggestions(self.message_input.toPlainText())
+        self.annotation_list.clear()
+        if not suggestions:
+            self.annotation_list.hide()
+            return
+        for suggestion in suggestions:
+            label = suggestion.get("label", "")
+            detail = suggestion.get("detail", "")
+            item = QListWidgetItem(f"{label} - {detail}" if detail else label)
+            item.setData(Qt.ItemDataRole.UserRole, suggestion.get("insert_text", label))
+            self.annotation_list.addItem(item)
+        self.annotation_list.setCurrentRow(0)
+        self.annotation_list.show()
+
+    def _move_annotation_suggestion(self, direction: int) -> None:
+        """Move popup selection while keeping the input cursor in place."""
+        count = self.annotation_list.count()
+        if count:
+            self.annotation_list.setCurrentRow((max(self.annotation_list.currentRow(), 0) + direction) % count)
+
+    def _apply_selected_annotation(self) -> None:
+        """Insert the keyboard-selected Flow suggestion."""
+        item = self.annotation_list.currentItem()
+        if item is not None:
+            self._apply_annotation_suggestion(item)
+
+    def _apply_annotation_suggestion(self, item: QListWidgetItem) -> None:
+        """Insert one Flow suggestion and show its next guided step."""
+        insert_text = item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(insert_text, str):
+            return
+        self._applying_suggestion = True
+        try:
+            self.message_input.setPlainText(insert_text)
+            self.message_input.moveCursor(QTextCursor.MoveOperation.End)
+        finally:
+            self._applying_suggestion = False
+        self._update_annotation_suggestions()
+        self.message_input.setFocus()
 
     def _toggle_side_panel(self) -> None:
         """Hide or restore Flow's monitor without discarding its latest event state."""
@@ -180,12 +266,44 @@ class FlowChatView(QWidget):
         self._latest_trace_text = trace
         self._latest_trace_detailed = detailed_trace
         self._latest_trace_events = events
-        self._append_message("AMADEUS", response)
+        if response:
+            self._append_message("AMADEUS", response)
         if events:
             self._render_process_events(events)
         else:
             self.process_monitor.setPlainText(detailed_trace)
         self._set_waiting(False)
+        if isinstance(result, dict):
+            created_chat = result.get("created_chat")
+            chat_id = created_chat.get("chat_id") if isinstance(created_chat, dict) else None
+            if isinstance(chat_id, str) and chat_id:
+                self.chat_created.emit(chat_id)
+            approval_request = result.get("approval_request")
+            if isinstance(approval_request, dict):
+                self._handle_approval_request(approval_request)
+
+    def _handle_approval_request(self, approval_request: dict[str, object]) -> None:
+        """Ask on the GUI thread before Core is allowed to consume the pending ID."""
+        action_id = approval_request.get("action_id")
+        if not isinstance(action_id, str) or not action_id:
+            return
+        dialog = ActionApprovalDialog(approval_request, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            try:
+                self.core.decline_pending_action(action_id)
+                self._append_message("AMADEUS", "Action declined. Nothing was created.")
+            except Exception as error:
+                self._append_message("AMADEUS", f"Could not decline action: {error}")
+            return
+        try:
+            created = self.core.approve_pending_action(action_id)
+            chat_id = getattr(created, "chat_id", "")
+            if isinstance(chat_id, str) and chat_id:
+                self.chat_created.emit(chat_id)
+            self.approval_completed.emit(getattr(created, "created_ids", ()))
+            self._append_message("AMADEUS", "Action approved and completed.")
+        except Exception as error:
+            self._append_message("AMADEUS", f"Could not complete approved action: {error}")
 
     def _render_process_events(self, events: list[dict[str, object]]) -> None:
         """Render Core's safe event rows without exposing other workspace controls."""
@@ -204,7 +322,17 @@ class FlowChatView(QWidget):
         self.status_label.setText("AMADEUS is thinking..." if waiting else "Ready")
 
     def _append_message(self, speaker: str, message: str) -> None:
-        self.flow_history.append(f"{speaker}: {message}")
+        """Append a transcript message with clear visual separation from the prior one."""
+        if not self.flow_history.document().isEmpty():
+            self.flow_history.append("")
+            self.flow_history.append("")
+        heading_format = QTextCharFormat()
+        heading_format.setFontWeight(QFont.Weight.Bold)
+        cursor = QTextCursor(self.flow_history.document().lastBlock())
+        cursor.insertText(f"{speaker}: ", heading_format)
+        body_format = QTextCharFormat()
+        body_format.setFontWeight(QFont.Weight.Normal)
+        cursor.insertText(message, body_format)
 
     def _remove_worker(self, thread: QThread, worker: FlowChatResponseWorker) -> None:
         if thread in self._active_threads:

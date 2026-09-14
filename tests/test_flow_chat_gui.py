@@ -1,23 +1,26 @@
 """Headless navigation and state-retention checks for the Flow Chat GUI shell."""
 
 import os
+import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QEvent, Qt
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication, QLabel
+from PyQt6.QtWidgets import QApplication, QLabel, QDialog
 
 from amadeus_gui import AmadeusMainWindow
-from amadeus_gui.flow_chat_view import FlowMessageInput
+from amadeus_gui.flow_chat_view import FlowChatView, FlowMessageInput
 from amadeus_gui.main.main_window import NewChatDialog
-from canvas_module import CanvasWorkspaceDescriptor
+from canvas_module import CanvasModule, CanvasWorkspaceDescriptor
 from canvas_module.gui import CanvasView
+from habit_tracker import HabitTrackerService, HabitTrackerView
 from mindmap.gui import MindMapView
 from mindmap.models import GraphNode, GraphSnapshot
 
@@ -26,10 +29,10 @@ class FakeFlowCore:
     """Core-shaped test double that keeps GUI tests independent of runtime data."""
 
     def list_chats(self) -> list[object]:
-        return []
+        return self.chats
 
     def get_current_chat_id(self) -> str:
-        return "main"
+        return self.current_chat_id
 
     def get_current_chat_metadata(self) -> SimpleNamespace:
         return SimpleNamespace(
@@ -56,15 +59,36 @@ class FakeFlowCore:
     def get_comments_panel_payload(self) -> dict:
         return {"type": "comments", "title": "Comments", "content": "", "metadata": {"comments": []}}
 
+    def get_flow_annotation_suggestions(self, text: str) -> list[dict[str, str]]:
+        if text.strip() == "/":
+            return [{"label": "/create", "insert_text": "/create", "detail": "Create workspace"}]
+        if text.strip() == "/create":
+            return [{"label": "/create-sheet", "insert_text": "/create-sheet ", "detail": "Create Sheet"}]
+        if text.strip() == "[memory]":
+            return [{"label": "[memory][global]", "insert_text": "[memory][global]", "detail": "Save memory"}]
+        return []
+
     def __init__(self) -> None:
+        self._temporary_directory = tempfile.TemporaryDirectory()
+        service_root = Path(self._temporary_directory.name)
+        self.canvas = CanvasModule(service_root)
+        self.habits = HabitTrackerService(service_root)
         self._mind_map_listeners = []
         self.mind_map_snapshot = GraphSnapshot(graph_id="main", nodes=(), links=())
         self.metadata_updates: list[dict[str, object]] = []
         self.created_chats: list[dict[str, object]] = []
+        self.current_chat_id = "main"
+        self.chats = [SimpleNamespace(chat_id="main", title="Main Chat")]
 
     def create_chat(self, **fields: object) -> SimpleNamespace:
         self.created_chats.append(fields)
-        return SimpleNamespace(chat_id="created", **fields)
+        chat = SimpleNamespace(chat_id="created", **fields)
+        self.chats.append(chat)
+        self.current_chat_id = chat.chat_id
+        return chat
+
+    def switch_chat(self, chat_id: str) -> None:
+        self.current_chat_id = chat_id
 
     def update_chat_metadata(self, chat_id: str, **changes: object) -> SimpleNamespace:
         self.metadata_updates.append({"chat_id": chat_id, **changes})
@@ -81,6 +105,10 @@ class FakeFlowCore:
         for listener in self._mind_map_listeners:
             listener({"event_type": "node_created", "entity_id": node.node_id})
 
+    def cleanup(self) -> None:
+        """Release the isolated storage used by the real Canvas and Habit facades."""
+        self._temporary_directory.cleanup()
+
 
 def wait_until(predicate, timeout_ms: int = 1000) -> bool:
     """Pump queued Qt signals until a GUI condition settles or its deadline expires."""
@@ -92,6 +120,23 @@ def wait_until(predicate, timeout_ms: int = 1000) -> bool:
         QTest.qWait(10)
     QApplication.processEvents()
     return predicate()
+
+
+def close_test_window(window) -> None:
+    """Dispose fixture windows and timers before their temporary services."""
+    if not wait_until(lambda: not window.mind_map_view.has_active_workers()
+                      and not window.flow_chat_view.has_active_workers()):
+        raise AssertionError("GUI workers did not finish during cleanup")
+    window.close()
+    window.mind_map_view.deleteLater()
+    window.canvas_view.deleteLater()
+    window.habit_tracker_view.deleteLater()
+    for key in window.module_window_manager.registered_keys():
+        module_window = window.module_window_manager.get_window(key)
+        if module_window is not None:
+            module_window.deleteLater()
+    window.deleteLater()
+    QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 class CoordinatedFlowCore(FakeFlowCore):
@@ -128,14 +173,17 @@ class FlowChatShellTests(unittest.TestCase):
         cls.application = QApplication.instance() or QApplication([])
 
     def setUp(self) -> None:
-        self.window = AmadeusMainWindow(FakeFlowCore())
+        self.core = FakeFlowCore()
+        self.window = AmadeusMainWindow(self.core)
 
     def tearDown(self) -> None:
-        self.window.close()
+        close_test_window(self.window)
+        self.core.cleanup()
 
-    def test_flow_is_default_and_has_persisted_history(self) -> None:
-        self.assertIs(self.window.flow_chat_view, self.window.views.currentWidget())
+    def test_flow_is_permanent_main_view_and_has_persisted_history(self) -> None:
+        self.assertIs(self.window.flow_chat_view, self.window.centralWidget().findChild(FlowChatView))
         self.assertIn("Welcome to Flow.", self.window.flow_chat_view.flow_history.toPlainText())
+        self.assertTrue(self.window.navigation_buttons["Flow Chat"].isChecked())
 
     def test_sidebar_has_all_six_navigation_labels(self) -> None:
         self.assertEqual(
@@ -143,28 +191,58 @@ class FlowChatShellTests(unittest.TestCase):
             list(self.window.navigation_buttons),
         )
 
-    def test_switching_preserves_existing_view_widgets_and_state(self) -> None:
+    def test_several_module_windows_can_remain_open_in_parallel(self) -> None:
+        self.window.navigation_buttons["Chats"].click()
+        self.window.navigation_buttons["Mind Map"].click()
+        self.window.navigation_buttons["Canvas"].click()
+
+        self.assertTrue(self.window.module_window_manager.is_visible("chats"))
+        self.assertTrue(self.window.module_window_manager.is_visible("mind_map"))
+        self.assertTrue(self.window.module_window_manager.is_visible("canvas"))
+        self.assertIsNot(
+            self.window.module_window_manager.get_window("chats"),
+            self.window.module_window_manager.get_window("canvas"),
+        )
+
+    def test_opening_module_windows_preserves_flow_and_reuses_views(self) -> None:
         flow_view = self.window.flow_chat_view
         flow_view.message_input.setPlainText("Keep this draft")
+
         self.window.navigation_buttons["Chats"].click()
-        self.assertIs(self.window.dedicated_chat_view, self.window.views.currentWidget())
+        chats_window = self.window.module_window_manager.get_window("chats")
+        self.assertIsNotNone(chats_window)
+        self.assertIs(self.window.dedicated_chat_view, chats_window.centralWidget())
+
+        self.window.navigation_buttons["Chats"].click()
+        self.assertIs(chats_window, self.window.module_window_manager.get_window("chats"))
         self.window.navigation_buttons["Flow Chat"].click()
-        self.assertIs(flow_view, self.window.views.currentWidget())
         self.assertEqual("Keep this draft", flow_view.message_input.toPlainText())
 
-    def test_chats_and_named_placeholders_are_accessible(self) -> None:
+    def test_chats_code_and_habit_tracker_open_in_independent_windows(self) -> None:
         self.window.navigation_buttons["Chats"].click()
-        self.assertIs(self.window.dedicated_chat_view, self.window.views.currentWidget())
-        for label, view in (("Code", self.window.code_view), ("Habit Tracker", self.window.habit_tracker_view)):
-            self.window.navigation_buttons[label].click()
-            self.assertIs(view, self.window.views.currentWidget())
-            self.assertEqual(label, view.module_name)
-            self.assertIn("Foundation pending.", "\n".join(label.text() for label in view.findChildren(QLabel)))
+        chats_window = self.window.module_window_manager.get_window("chats")
+        self.assertIs(self.window.dedicated_chat_view, chats_window.centralWidget())
+
+        self.window.navigation_buttons["Code"].click()
+        code_window = self.window.module_window_manager.get_window("code")
+        self.assertIs(self.window.code_view, code_window.centralWidget())
+        self.assertEqual("Code", self.window.code_view.module_name)
+        self.assertIn("Foundation pending.", "\n".join(widget.text() for widget in self.window.code_view.findChildren(QLabel)))
+
+        self.window.navigation_buttons["Habit Tracker"].click()
+        habit_window = self.window.module_window_manager.get_window("habit_tracker")
+        self.assertIs(self.window.habit_tracker_view, habit_window.centralWidget())
+        self.assertIsInstance(self.window.habit_tracker_view, HabitTrackerView)
+
+        self.assertTrue(self.window.module_window_manager.is_visible("chats"))
+        self.assertTrue(self.window.module_window_manager.is_visible("code"))
+        self.assertTrue(self.window.module_window_manager.is_visible("habit_tracker"))
 
     def test_mind_map_page_is_core_backed_and_receives_live_graph_changes(self) -> None:
         self.assertIsInstance(self.window.mind_map_view, MindMapView)
         self.window.navigation_buttons["Mind Map"].click()
-        self.assertIs(self.window.mind_map_view, self.window.views.currentWidget())
+        mind_map_window = self.window.module_window_manager.get_window("mind_map")
+        self.assertIs(self.window.mind_map_view, mind_map_window.centralWidget())
 
         node = GraphNode(node_id="node-1", graph_id="main", node_type="idea", title="Live Node")
         self.window.core.publish_mind_map_change(node)
@@ -177,16 +255,18 @@ class FlowChatShellTests(unittest.TestCase):
     def test_canvas_page_is_a_persistent_core_backed_workspace(self) -> None:
         self.assertIsInstance(self.window.canvas_view, CanvasView)
         self.window.navigation_buttons["Canvas"].click()
-        self.assertIs(self.window.canvas_view, self.window.views.currentWidget())
+        canvas_window = self.window.module_window_manager.get_window("canvas")
+        self.assertIs(self.window.canvas_view, canvas_window.centralWidget())
         self.assertEqual("main", self.window.canvas_view.descriptor.workspace_id)
         self.assertEqual("Canvas", self.window.canvas_view.module_name)
         self.assertEqual("canvasSurface", self.window.canvas_view.surface.objectName())
-        self.assertIn("foundation ready", self.window.canvas_view.status_label.text().lower())
+        self.assertIn("loaded 0 blocks and 0 connectors", self.window.canvas_view.status_label.text().lower())
 
     def test_flow_worker_renders_live_event_before_final_payload_reconciliation(self) -> None:
         core = CoordinatedFlowCore()
         window = AmadeusMainWindow(core)
-        self.addCleanup(window.close)
+        self.addCleanup(core.cleanup)
+        self.addCleanup(close_test_window, window)
         self.addCleanup(core.allow_final_payload.set)
         flow_view = window.flow_chat_view
 
@@ -204,9 +284,59 @@ class FlowChatShellTests(unittest.TestCase):
         self.assertIn("Response Returned", flow_view.process_monitor.toPlainText())
         self.assertIn("Flow complete.", flow_view.flow_history.toPlainText())
 
+    def test_flow_created_chat_refreshes_and_opens_dedicated_workspace(self) -> None:
+        self.window.core.create_chat(title="Patch Review", description="Check patches", priority="Critical")
+
+        self.window.flow_chat_view._handle_response(
+            {"response": "Created.", "created_chat": {"chat_id": "created"}}
+        )
+
+        self.assertEqual("created", self.window.core.get_current_chat_id())
+        self.assertEqual("Patch Review", self.window.chat_selector.currentText())
+        self.assertTrue(self.window.module_window_manager.is_visible("chats"))
+
+    def test_flow_approval_dialog_calls_core_only_after_mocked_approval(self) -> None:
+        core = self.window.core
+        core.approved_actions = []
+        core.declined_actions = []
+        core.approve_pending_action = lambda action_id: core.approved_actions.append(action_id) or SimpleNamespace()
+        core.decline_pending_action = lambda action_id: core.declined_actions.append(action_id)
+        request = {
+            "action_id": "action-1",
+            "kind": "habit_tracker",
+            "display_fields": {"kind": "one_time", "title": "Buy groceries", "date": "2026-08-07"},
+        }
+
+        with patch("amadeus_gui.flow_chat_view.ActionApprovalDialog") as dialog_type:
+            dialog_type.return_value.exec.return_value = QDialog.DialogCode.Accepted
+            self.window.flow_chat_view._handle_response({"response": "", "approval_request": request})
+
+        dialog_type.assert_called_once()
+        self.assertEqual(["action-1"], core.approved_actions)
+        self.assertEqual([], core.declined_actions)
+        self.assertNotIn("Approval required", self.window.flow_chat_view.flow_history.toPlainText())
+
+    def test_dedicated_chat_approval_dialog_declines_without_owner_action(self) -> None:
+        core = self.window.core
+        core.approved_actions = []
+        core.declined_actions = []
+        core.approve_pending_action = lambda action_id: core.approved_actions.append(action_id)
+        core.decline_pending_action = lambda action_id: core.declined_actions.append(action_id)
+        request = {"action_id": "action-2", "kind": "memory", "display_fields": {"request": "Remember"}}
+
+        with patch("amadeus_gui.main.main_window.ActionApprovalDialog") as dialog_type:
+            dialog_type.return_value.exec.return_value = QDialog.DialogCode.Rejected
+            self.window._handle_response({"response": "", "approval_request": request})
+
+        dialog_type.assert_called_once()
+        self.assertEqual([], core.approved_actions)
+        self.assertEqual(["action-2"], core.declined_actions)
+
     def test_failed_flow_request_reenables_input_and_send_controls(self) -> None:
-        window = AmadeusMainWindow(FailingFlowCore())
-        self.addCleanup(window.close)
+        core = FailingFlowCore()
+        window = AmadeusMainWindow(core)
+        self.addCleanup(core.cleanup)
+        self.addCleanup(close_test_window, window)
         flow_view = window.flow_chat_view
 
         flow_view.message_input.setPlainText("Fail Flow")
@@ -225,6 +355,8 @@ class FlowChatShellTests(unittest.TestCase):
         right_panel = self.window.right_panel
 
         self.window.navigation_buttons["Chats"].click()
+        chats_window = self.window.module_window_manager.get_window("chats")
+        self.assertIs(self.window.dedicated_chat_view, chats_window.centralWidget())
         chat_input.setPlainText("Keep this Chats draft")
         right_panel.setCurrentIndex(right_panel.PROCESS_TAB_INDEX)
         self.assertTrue(self.window.new_chat_button.isEnabled())
@@ -337,6 +469,21 @@ class FlowChatShellTests(unittest.TestCase):
         QTest.keyClick(input_widget, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
         self.assertEqual([True], sent)
         self.assertEqual("\n", input_widget.toPlainText())
+
+    def test_flow_annotation_popup_stages_commands_and_keeps_enter_send_when_closed(self) -> None:
+        flow_view = self.window.flow_chat_view
+        flow_view.message_input.setPlainText("/")
+        self.assertFalse(flow_view.annotation_list.isHidden())
+        flow_view._apply_selected_annotation()
+        self.assertEqual("/create", flow_view.message_input.toPlainText())
+        flow_view._apply_selected_annotation()
+        self.assertEqual("/create-sheet ", flow_view.message_input.toPlainText())
+        self.assertFalse(flow_view.annotation_list.isVisible())
+
+        flow_view.message_input.setPlainText("[memory]")
+        self.assertFalse(flow_view.annotation_list.isHidden())
+        QTest.keyClick(flow_view.message_input, Qt.Key.Key_Escape)
+        self.assertTrue(flow_view.annotation_list.isHidden())
 
     def test_side_panels_can_hide_and_restore_without_losing_state(self) -> None:
         flow_view = self.window.flow_chat_view

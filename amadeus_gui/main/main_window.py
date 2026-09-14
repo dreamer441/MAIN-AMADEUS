@@ -9,7 +9,7 @@ decisions still belong to Core; panel payload/state concepts live in the
 from collections.abc import Callable
 
 from PyQt6.QtCore import QObject, QThread, Qt, pyqtSignal
-from PyQt6.QtGui import QTextCursor
+from PyQt6.QtGui import QFont, QTextCharFormat, QTextCursor
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -24,7 +24,6 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
-    QStackedWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -32,9 +31,12 @@ from PyQt6.QtWidgets import (
 
 from amadeus_core import AmadeusCore
 from amadeus_gui.flow_chat_view import FlowChatView
+from amadeus_gui.approval_dialog import ActionApprovalDialog
 from amadeus_gui.module_placeholder_view import ModulePlaceholderView
+from amadeus_gui.module_window_manager import ModuleWindowManager
 from amadeus_gui.side import RightPanelWidget
 from canvas_module.gui import CanvasView
+from habit_tracker import HabitTrackerView
 from mindmap.gui import MindMapView
 
 
@@ -242,7 +244,6 @@ class NewChatDialog(QDialog):
         self.scope_input = QComboBox()
         self.scope_input.addItems(("Local", "Project", "Global"))
         self.scope_input.setCurrentText(scope)
-
         form.addRow("Title:", self.title_input)
         form.addRow("Description:", self.description_input)
         form.addRow("Priority:", self.priority_input)
@@ -276,13 +277,12 @@ class NewChatDialog(QDialog):
         """Return the selected descriptive V1 scope label."""
         return self.scope_input.currentText()
 
-
 class DedicatedChatView(QWidget):
     """Reusable container for the existing dedicated-chat controls and workspace."""
 
 
 class AmadeusMainWindow(QMainWindow):
-    """Main desktop window for the first AMADEUS feedback loop."""
+    """Permanent Flow Chat home and coordinator for independent module windows."""
 
     def __init__(self, core: AmadeusCore) -> None:
         super().__init__()
@@ -309,7 +309,7 @@ class AmadeusMainWindow(QMainWindow):
         self._visible_message_count = 0
         self._pending_material_id = ""
 
-        self.setWindowTitle("AMADEUS")
+        self.setWindowTitle("AMADEUS — Flow Chat")
         self.resize(1250, 720)
 
         self._build_ui()
@@ -318,6 +318,8 @@ class AmadeusMainWindow(QMainWindow):
         self._refresh_sheets_panel(switch_to_tab=False)
         self._refresh_materials_panel(switch_to_tab=False)
         self._refresh_comments_panel(switch_to_tab=False)
+        self._refresh_linked_mind_map_panel(switch_to_tab=False)
+        self._refresh_chat_data_panel(switch_to_tab=False)
         self._refresh_project_tree()
 
     def _build_ui(self) -> None:
@@ -360,6 +362,8 @@ class AmadeusMainWindow(QMainWindow):
         self.right_panel.comment_delete_requested.connect(self._delete_comment_from_panel)
         self.right_panel.comment_jump_requested.connect(self._jump_to_message)
         self.right_panel.comment_refresh_requested.connect(self._refresh_comments_panel)
+        self.right_panel.chat_data_refresh_requested.connect(self._refresh_chat_data)
+        self.right_panel.chat_data_export_requested.connect(self._create_chat_data_export)
 
         main_row.addLayout(chat_column, stretch=3)
         self.side_panel_toggle_button = QPushButton(">")
@@ -394,9 +398,20 @@ class AmadeusMainWindow(QMainWindow):
 
         self.send_button = QPushButton("Send")
         self.send_button.clicked.connect(self.send_message)
+        self.response_mode_selector = QComboBox()
+        self.response_mode_selector.addItem("None", "none")
+        self.response_mode_selector.addItem("Short", "short")
+        self.response_mode_selector.addItem("Normal", "normal")
+        self.response_mode_selector.addItem("Large", "large")
+        self.response_mode_selector.addItem("Full Send", "full_send")
+        self.response_mode_selector.setToolTip("Response length for the active chat.")
+        self.response_mode_selector.currentIndexChanged.connect(self._save_response_mode)
 
         input_row.addWidget(self.message_input)
-        input_row.addWidget(self.send_button)
+        send_column = QVBoxLayout()
+        send_column.addWidget(self.send_button)
+        send_column.addWidget(self.response_mode_selector)
+        input_row.addLayout(send_column)
 
         layout.addWidget(title)
         layout.addLayout(self._build_chat_control_row())
@@ -406,17 +421,26 @@ class AmadeusMainWindow(QMainWindow):
         layout.addLayout(input_row)
 
         self.flow_chat_view = FlowChatView(self.core)
+        self.flow_chat_view.chat_created.connect(self._open_flow_created_chat)
+        self.flow_chat_view.approval_completed.connect(self._refresh_after_flow_approval)
         self.code_view = ModulePlaceholderView("Code", "A focused workspace for future coding tasks.")
         self.mind_map_view = MindMapView(self.core, refresh_on_init=False)
+        self.mind_map_view.source_open_requested.connect(self._open_mind_map_source)
+        self.mind_map_view.graph_changed.connect(self._refresh_workspace_after_mind_map_change)
         self.canvas_view = CanvasView(self.core)
-        self.habit_tracker_view = ModulePlaceholderView("Habit Tracker", "A future home for intentional habit tracking.")
-        self.views = QStackedWidget()
-        self.views.addWidget(self.flow_chat_view)
-        self.views.addWidget(self.dedicated_chat_view)
-        self.views.addWidget(self.code_view)
-        self.views.addWidget(self.mind_map_view)
-        self.views.addWidget(self.canvas_view)
-        self.views.addWidget(self.habit_tracker_view)
+        self.habit_tracker_view = HabitTrackerView(service=self.core.habits)
+
+        # Flow Chat is the permanent AMADEUS home. Every other major workspace is
+        # hosted in one reusable top-level window so several modules can remain
+        # visible at the same time without duplicating their Core-backed state.
+        self.module_window_manager = ModuleWindowManager(self)
+        self.module_window_manager.register("chats", "Chats", self.dedicated_chat_view, size=(1250, 720))
+        self.module_window_manager.register("code", "Code", self.code_view)
+        self.module_window_manager.register(
+            "mind_map", "Mind Map", self.mind_map_view, size=(1300, 800), on_show=self.mind_map_view.refresh_graph
+        )
+        self.module_window_manager.register("canvas", "Canvas", self.canvas_view, size=(1350, 820))
+        self.module_window_manager.register("habit_tracker", "Habit Tracker", self.habit_tracker_view, size=(1250, 820))
 
         shell = QWidget()
         shell_layout = QHBoxLayout(shell)
@@ -424,26 +448,132 @@ class AmadeusMainWindow(QMainWindow):
         sidebar_title = QLabel("AMADEUS")
         sidebar_title.setStyleSheet("font-size: 18px; font-weight: bold; padding: 8px;")
         sidebar.addWidget(sidebar_title)
+
         self.navigation_buttons: dict[str, QPushButton] = {}
-        for index, label in enumerate(("Flow Chat", "Chats", "Code", "Mind Map", "Canvas", "Habit Tracker")):
+        flow_button = QPushButton("Flow Chat")
+        flow_button.setCheckable(True)
+        flow_button.setChecked(True)
+        flow_button.clicked.connect(lambda _checked=False: self._focus_flow_chat())
+        self.navigation_buttons["Flow Chat"] = flow_button
+        sidebar.addWidget(flow_button)
+
+        for label, module_key in (
+            ("Chats", "chats"),
+            ("Code", "code"),
+            ("Mind Map", "mind_map"),
+            ("Canvas", "canvas"),
+            ("Habit Tracker", "habit_tracker"),
+        ):
             button = QPushButton(label)
-            button.setCheckable(True)
-            button.clicked.connect(lambda _checked, view_index=index: self._select_view(view_index))
+            button.clicked.connect(lambda _checked=False, key=module_key: self._open_module_window(key))
             self.navigation_buttons[label] = button
             sidebar.addWidget(button)
+
         sidebar.addStretch()
         shell_layout.addLayout(sidebar)
-        shell_layout.addWidget(self.views, stretch=1)
+        shell_layout.addWidget(self.flow_chat_view, stretch=1)
         self.setCentralWidget(shell)
-        self._select_view(0)
+
+    def _focus_flow_chat(self) -> None:
+        """Keep Flow Chat selected and bring the permanent main window forward."""
+        self.navigation_buttons["Flow Chat"].setChecked(True)
+        if self.isMinimized():
+            self.showNormal()
+        else:
+            self.show()
+        self.raise_()
+        self.activateWindow()
+        self.flow_chat_view.message_input.setFocus()
+
+    def _open_module_window(self, module_key: str) -> None:
+        """Open or focus one independent module window through the shared manager."""
+        try:
+            window = self.module_window_manager.open(module_key)
+            self.flow_chat_view.status_label.setText(f"Opened {window.windowTitle().replace('AMADEUS — ', '')} window.")
+        except Exception as error:
+            self.flow_chat_view.status_label.setText(f"Could not open module window: {error}")
 
     def _select_view(self, index: int) -> None:
-        """Switch persistent pages without recreating any chat or module state."""
-        self.views.setCurrentIndex(index)
-        if index == 3:
-            self.mind_map_view.refresh_graph()
-        for button_index, button in enumerate(self.navigation_buttons.values()):
-            button.setChecked(button_index == index)
+        """Compatibility router for existing source-opening code.
+
+        Older coordination paths identify workspaces by their former stacked-view
+        index. Preserve those callers while routing them to independent windows.
+        """
+        module_keys = {1: "chats", 2: "code", 3: "mind_map", 4: "canvas", 5: "habit_tracker"}
+        if index == 0:
+            self._focus_flow_chat()
+            return
+        module_key = module_keys.get(index)
+        if module_key is not None:
+            self._open_module_window(module_key)
+
+    def _open_mind_map_source(self, source_type: str, source_id: str, source_locator: str = "") -> None:
+        """Open a source-backed Mind Map node through the owning AMADEUS module.
+
+        Mind Map emits only source identity. MainWindow remains the coordinator
+        that knows how to switch visible workspaces; the graph never reaches
+        into chat, sheet, or material widgets directly.
+        """
+        source_type = str(source_type or "").strip().lower()
+        source_id = str(source_id or "").strip()
+        if not source_type or not source_id:
+            self.status_label.setText("Mind Map source reference is incomplete.")
+            return
+
+        try:
+            if source_type in {"chat", "message"}:
+                self.core.switch_chat(source_id)
+                self._refresh_chat_selector()
+                self._load_existing_chat_history()
+                self._reset_right_panel_for_chat_switch()
+                self._refresh_sheets_panel(switch_to_tab=False)
+                self._refresh_materials_panel(switch_to_tab=False)
+                self._refresh_comments_panel(switch_to_tab=False)
+                self._refresh_linked_mind_map_panel(switch_to_tab=False)
+                self._refresh_chat_data_panel(switch_to_tab=False)
+                self._select_view(1)
+                if source_type == "message" and source_locator:
+                    try:
+                        self._jump_to_message(int(source_locator))
+                    except (TypeError, ValueError):
+                        pass
+                self.status_label.setText("Opened the chat referenced by the Mind Map node.")
+                return
+
+            if source_type == "sheet":
+                if source_locator and source_locator != self.core.get_current_chat_id():
+                    self.core.switch_chat(source_locator)
+                    self._refresh_chat_selector()
+                    self._load_existing_chat_history()
+                    self._reset_right_panel_for_chat_switch()
+                self._select_view(1)
+                self._refresh_sheets_panel(switch_to_tab=True, selected_sheet_id=source_id)
+                self._refresh_linked_mind_map_panel(switch_to_tab=False)
+                self.status_label.setText("Opened the sheet referenced by the Mind Map node.")
+                return
+
+            if source_type == "comment":
+                if source_locator and source_locator != self.core.get_current_chat_id():
+                    self.core.switch_chat(source_locator)
+                    self._refresh_chat_selector()
+                    self._load_existing_chat_history()
+                    self._reset_right_panel_for_chat_switch()
+                self._select_view(1)
+                self._refresh_comments_panel(switch_to_tab=True)
+                self.right_panel.focus_comment(source_id)
+                self._refresh_linked_mind_map_panel(switch_to_tab=False)
+                self.status_label.setText("Opened the comment referenced by the Mind Map node.")
+                return
+
+            if source_type == "material":
+                self._select_view(1)
+                self._preview_material(source_id)
+                self.status_label.setText("Opened the material referenced by the Mind Map node.")
+                return
+
+            self.status_label.setText(f"No source opener is registered yet for '{source_type}'.")
+        except Exception as error:
+            self.status_label.setText(f"Could not open Mind Map source: {error}")
 
     def _toggle_side_panel(self) -> None:
         """Hide or restore the dedicated-chat workspace panel without clearing it."""
@@ -645,6 +775,7 @@ class AmadeusMainWindow(QMainWindow):
         trace_detailed = trace
         trace_events: list[dict[str, str]] = []
         side_panel: object | None = None
+        suppress_visible_output = False
 
         if isinstance(result, dict):
             # Core returns a dictionary so GUI can show chat text, trace data, and side panels separately.
@@ -653,6 +784,7 @@ class AmadeusMainWindow(QMainWindow):
             raw_trace_detailed = result.get("trace_detailed")
             raw_trace_events = result.get("trace_events")
             side_panel = result.get("side_panel")
+            suppress_visible_output = result.get("suppress_visible_output") is True
 
             if isinstance(raw_response, str):
                 response = raw_response
@@ -670,10 +802,43 @@ class AmadeusMainWindow(QMainWindow):
         self._latest_trace_detailed = trace_detailed
         self._latest_trace_events = trace_events
 
-        self._append_message("AMADEUS", response)
+        if not suppress_visible_output and response:
+            self._append_message("AMADEUS", response)
+        elif not response:
+            self.status_label.setText("AMADEUS processed the message without a normal reply.")
         self._render_latest_trace()
         self._render_side_panel(side_panel)
         self._set_waiting_for_response(False)
+        if isinstance(result, dict):
+            approval_request = result.get("approval_request")
+            if isinstance(approval_request, dict):
+                self._handle_approval_request(approval_request)
+
+    def _handle_approval_request(self, approval_request: dict[str, object]) -> None:
+        """Confirm a dedicated-chat write after its response worker returns."""
+        action_id = approval_request.get("action_id")
+        if not isinstance(action_id, str) or not action_id:
+            return
+        dialog = ActionApprovalDialog(approval_request, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            try:
+                self.core.decline_pending_action(action_id)
+                self._append_message("AMADEUS", "Action declined. Nothing was created.")
+            except Exception as error:
+                self.status_label.setText(f"Could not decline action: {error}")
+            return
+        try:
+            created = self.core.approve_pending_action(action_id)
+            self._append_message("AMADEUS", "Action approved and completed.")
+            if isinstance(getattr(created, "chat_id", ""), str) and created.chat_id:
+                self._refresh_chat_selector()
+                self._open_flow_created_chat(created.chat_id)
+            self._refresh_sheets_panel(switch_to_tab=False)
+            self._refresh_materials_panel(switch_to_tab=False)
+            self._refresh_comments_panel(switch_to_tab=False)
+            self._refresh_linked_mind_map_panel(switch_to_tab=False)
+        except Exception as error:
+            self.status_label.setText(f"Could not complete approved action: {error}")
 
     def _handle_process_event(self, event: object) -> None:
         """Append one backend-safe event row while a normal chat request is running."""
@@ -772,6 +937,7 @@ class AmadeusMainWindow(QMainWindow):
 
             if self.chat_selector.count() > 0:
                 self.chat_selector.setCurrentIndex(selected_index)
+            self._refresh_response_mode_selector()
         finally:
             self._refreshing_chat_selector = False
 
@@ -786,14 +952,27 @@ class AmadeusMainWindow(QMainWindow):
 
         try:
             self.core.switch_chat(chat_id)
+            self._refresh_response_mode_selector()
             self._load_existing_chat_history()
             self._reset_right_panel_for_chat_switch()
             self._refresh_sheets_panel(switch_to_tab=False)
             self._refresh_materials_panel(switch_to_tab=False)
             self._refresh_comments_panel(switch_to_tab=False)
+            self._refresh_linked_mind_map_panel(switch_to_tab=False)
+            self._refresh_chat_data_panel(switch_to_tab=False)
             self.status_label.setText(f"Switched to {self.chat_selector.currentText()}")
         except Exception as error:
             self.status_label.setText(f"Could not switch chat: {error}")
+
+    def _open_flow_created_chat(self, chat_id: str) -> None:
+        """Refresh and open a Flow-created dedicated chat on the GUI thread."""
+        self._refresh_chat_selector()
+        index = self.chat_selector.findData(chat_id)
+        if index < 0:
+            self.status_label.setText("Flow created a chat that could not be selected.")
+            return
+        self._on_chat_selected(index)
+        self._select_view(1)
 
     def _create_new_chat(self) -> None:
         """Create a new chat workspace with editable typed metadata."""
@@ -818,6 +997,8 @@ class AmadeusMainWindow(QMainWindow):
             self._refresh_sheets_panel(switch_to_tab=False)
             self._refresh_materials_panel(switch_to_tab=False)
             self._refresh_comments_panel(switch_to_tab=False)
+            self._refresh_linked_mind_map_panel(switch_to_tab=False)
+            self._refresh_chat_data_panel(switch_to_tab=False)
             self.status_label.setText("Created new chat workspace.")
         except Exception as error:
             self.status_label.setText(f"Could not create chat: {error}")
@@ -885,6 +1066,8 @@ class AmadeusMainWindow(QMainWindow):
             self._refresh_sheets_panel(switch_to_tab=False)
             self._refresh_materials_panel(switch_to_tab=False)
             self._refresh_comments_panel(switch_to_tab=False)
+            self._refresh_linked_mind_map_panel(switch_to_tab=False)
+            self._refresh_chat_data_panel(switch_to_tab=False)
             self.status_label.setText("Deleted chat.")
         except Exception as error:
             self.status_label.setText(f"Could not delete chat: {error}")
@@ -918,6 +1101,37 @@ class AmadeusMainWindow(QMainWindow):
             self.right_panel.render_materials_payload(payload, switch_to_tab=switch_to_tab)
         except Exception as error:
             self.status_label.setText(f"Could not refresh materials: {error}")
+
+    def _refresh_chat_data_panel(self, switch_to_tab: bool = False) -> None:
+        """Render persisted Chat Data on the GUI thread without invoking the model."""
+        if not hasattr(self.core, "get_chat_data_panel_payload"):
+            return
+        try:
+            self.right_panel.render_chat_data_payload(
+                self.core.get_chat_data_panel_payload(), switch_to_tab=switch_to_tab
+            )
+        except Exception as error:
+            self.status_label.setText(f"Could not refresh Chat Data: {error}")
+
+    def _refresh_chat_data(self) -> None:
+        """Run deliberate five-layer generation from the visible Chat Data control."""
+        try:
+            self.core.refresh_chat_inner_brain()
+            self._refresh_chat_data_panel(switch_to_tab=True)
+            self._refresh_chat_selector()
+            self.status_label.setText("Chat Data analysis refreshed.")
+        except Exception as error:
+            self.status_label.setText(f"Could not analyze Chat Data: {error}")
+
+    def _create_chat_data_export(self) -> None:
+        """Create an export only after the explicit Chat Data button action."""
+        try:
+            self.core.create_chat_inner_brain_export()
+            self._refresh_chat_data_panel(switch_to_tab=True)
+            self._refresh_materials_panel(switch_to_tab=False)
+            self.status_label.setText("Chat export created.")
+        except Exception as error:
+            self.status_label.setText(f"Could not create chat export: {error}")
 
     def _preview_material(self, material_id: str) -> None:
         """Preview a selected material through Core without attaching it to chat."""
@@ -1020,6 +1234,7 @@ class AmadeusMainWindow(QMainWindow):
 
             selected_id = getattr(saved_sheet, "sheet_id", None)
             self._refresh_sheets_panel(switch_to_tab=True, selected_sheet_id=selected_id)
+            self._refresh_linked_mind_map_panel(switch_to_tab=False)
         except Exception as error:
             self.status_label.setText(f"Could not save sheet: {error}")
 
@@ -1030,6 +1245,7 @@ class AmadeusMainWindow(QMainWindow):
         try:
             self.core.delete_sheet(sheet_id)
             self._refresh_sheets_panel(switch_to_tab=True)
+            self._refresh_linked_mind_map_panel(switch_to_tab=False)
             self.status_label.setText("Deleted sheet.")
         except Exception as error:
             self.status_label.setText(f"Could not delete sheet: {error}")
@@ -1081,6 +1297,7 @@ class AmadeusMainWindow(QMainWindow):
             self._refresh_sheets_panel(switch_to_tab=False)
             self._refresh_materials_panel(switch_to_tab=False)
             self._refresh_comments_panel(switch_to_tab=False)
+            self._refresh_linked_mind_map_panel(switch_to_tab=False)
             self.status_label.setText("Created new chat from Side Ask.")
         except Exception as error:
             self.status_label.setText(f"Could not create Side Ask chat: {error}")
@@ -1100,6 +1317,7 @@ class AmadeusMainWindow(QMainWindow):
         try:
             saved_comment = self.core.add_comment(comment.strip(), selected_text)
             self._refresh_comments_panel(switch_to_tab=True)
+            self._refresh_linked_mind_map_panel(switch_to_tab=False)
             self.status_label.setText(f"Saved comment: {getattr(saved_comment, 'comment_id', 'comment')}")
         except Exception as error:
             self.status_label.setText(f"Could not save comment: {error}")
@@ -1120,6 +1338,7 @@ class AmadeusMainWindow(QMainWindow):
         try:
             self.core.update_comment(comment_id, comment.strip())
             self._refresh_comments_panel(switch_to_tab=True)
+            self._refresh_linked_mind_map_panel(switch_to_tab=False)
             self.status_label.setText("Updated comment.")
         except Exception as error:
             self.status_label.setText(f"Could not update comment: {error}")
@@ -1131,6 +1350,7 @@ class AmadeusMainWindow(QMainWindow):
         try:
             self.core.delete_comment(comment_id)
             self._refresh_comments_panel(switch_to_tab=True)
+            self._refresh_linked_mind_map_panel(switch_to_tab=False)
             self.status_label.setText("Deleted comment.")
         except Exception as error:
             self.status_label.setText(f"Could not delete comment: {error}")
@@ -1170,6 +1390,31 @@ class AmadeusMainWindow(QMainWindow):
         except Exception as error:
             self.status_label.setText(f"Could not refresh comments: {error}")
 
+    def _refresh_workspace_after_mind_map_change(self, _event: object) -> None:
+        """Reflect graph-created workspace objects in the active chat side panel."""
+        self._refresh_sheets_panel(switch_to_tab=False)
+        self._refresh_comments_panel(switch_to_tab=False)
+        self._refresh_linked_mind_map_panel(switch_to_tab=False)
+
+    def _refresh_after_flow_approval(self, _created_ids: object) -> None:
+        """Refresh shared views after Flow creates global or explicitly linked objects."""
+        self._refresh_sheets_panel(switch_to_tab=False)
+        self._render_current_chat_context_in_memory_panel()
+        self._refresh_linked_mind_map_panel(switch_to_tab=False)
+        self.mind_map_view.refresh_graph()
+
+    def _refresh_linked_mind_map_panel(self, switch_to_tab: bool = False) -> None:
+        """Refresh graph-linked context visible and active for the current chat."""
+        if not hasattr(self.core, "get_linked_mind_map_panel_payload"):
+            return
+        try:
+            self.right_panel.render_linked_context_payload(
+                self.core.get_linked_mind_map_panel_payload(),
+                switch_to_tab=switch_to_tab,
+            )
+        except Exception as error:
+            self.status_label.setText(f"Could not refresh linked Mind Map context: {error}")
+
     def _reset_right_panel_for_chat_switch(self) -> None:
         """Clear per-chat side-panel state when the visible conversation changes.
 
@@ -1180,6 +1425,31 @@ class AmadeusMainWindow(QMainWindow):
         self._latest_trace_detailed = self._latest_trace_text
         self._latest_trace_events = []
         self.right_panel.reset_for_chat_switch(self._current_chat_context_text())
+
+    def _refresh_response_mode_selector(self) -> None:
+        """Reflect the active chat's persisted response mode without saving during refresh."""
+        if not hasattr(self, "response_mode_selector") or not hasattr(self.core, "get_current_chat_metadata"):
+            return
+        try:
+            mode = str(getattr(self.core.get_current_chat_metadata(), "response_mode", "normal"))
+        except Exception:
+            mode = "normal"
+        index = self.response_mode_selector.findData(mode)
+        self.response_mode_selector.blockSignals(True)
+        self.response_mode_selector.setCurrentIndex(index if index >= 0 else 2)
+        self.response_mode_selector.blockSignals(False)
+
+    def _save_response_mode(self) -> None:
+        """Persist the compact response-length selection for the active chat."""
+        if not hasattr(self.core, "update_chat_metadata") or not hasattr(self.core, "get_current_chat_id"):
+            return
+        mode = self.response_mode_selector.currentData()
+        if not isinstance(mode, str):
+            return
+        try:
+            self.core.update_chat_metadata(self.core.get_current_chat_id(), response_mode=mode)
+        except Exception as error:
+            self.status_label.setText(f"Could not save response length: {error}")
 
     def _set_waiting_for_response(self, waiting: bool) -> None:
         """Toggle input and chat controls while AMADEUS is generating a response.
@@ -1195,6 +1465,7 @@ class AmadeusMainWindow(QMainWindow):
         self.edit_chat_button.setDisabled(waiting)
         self.delete_chat_button.setDisabled(waiting)
         self.add_comment_button.setDisabled(waiting)
+        self.response_mode_selector.setDisabled(waiting)
         self.status_label.setText("AMADEUS is thinking..." if waiting else "Ready")
 
     def _load_existing_chat_history(self) -> None:
@@ -1219,12 +1490,20 @@ class AmadeusMainWindow(QMainWindow):
             self._active_workers.remove(worker)
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt uses camelCase names.
-        """Prevent closing while a background chat request is still running."""
-        if self._active_threads or self.flow_chat_view.has_active_workers() or self.mind_map_view.has_active_workers():
-            self.status_label.setText("AMADEUS is still thinking. Wait for the response before closing.")
+        """Prevent closing while any visible module request is still running."""
+        if (
+            self._active_threads
+            or self.flow_chat_view.has_active_workers()
+            or self.mind_map_view.has_active_workers()
+            or self.canvas_view.has_active_workers()
+        ):
+            self.flow_chat_view.status_label.setText("AMADEUS is still thinking. Wait for the response before closing.")
             event.ignore()
             return
 
+        # Flow Chat is the application owner. Closing it performs a coordinated
+        # final shutdown instead of leaving detached module windows alive.
+        self.module_window_manager.close_all()
         super().closeEvent(event)
 
     def _append_message(self, speaker: str, message: str, message_number: int | None = None) -> None:
@@ -1237,7 +1516,16 @@ class AmadeusMainWindow(QMainWindow):
             self._visible_message_count = max(self._visible_message_count, int(message_number))
 
         clean_speaker = speaker.strip() or "Unknown"
-        self.chat_history.append(f"[{message_number}] {clean_speaker}: {message}")
+        if not self.chat_history.document().isEmpty():
+            self.chat_history.append("")
+            self.chat_history.append("")
+        heading_format = QTextCharFormat()
+        heading_format.setFontWeight(QFont.Weight.Bold)
+        cursor = QTextCursor(self.chat_history.document().lastBlock())
+        cursor.insertText(f"[{message_number}] {clean_speaker}: ", heading_format)
+        body_format = QTextCharFormat()
+        body_format.setFontWeight(QFont.Weight.Normal)
+        cursor.insertText(message, body_format)
 
     def _current_chat_context_text(self) -> str:
         """Return readable current-chat metadata for the Memory panel.

@@ -15,18 +15,31 @@
 - Process Monitor panel showing the latest message execution trace.
 - Compact/Detailed trace display mode selector.
 - GUI response handling supports Core's dictionary payload: response text, compact trace, detailed trace, structured trace events, and side-panel data.
+- Flow and dedicated Chats handle `approval_request` payloads with the same modal Approve / Decline dialog after the response worker returns to the GUI thread.
+- Approval requests do not add transcript approval text. The dialog is the only confirmation surface; completion or decline is appended after it closes.
 - Contains comments explaining GUI/Core separation, worker threading, trace display, response payload handling, and multi-chat UI safety.
 
 ## Flow Chat Navigation Shell
 
-- `AmadeusMainWindow` is a persistent sidebar shell with Flow Chat selected at startup.
+- `AmadeusMainWindow` is the permanent Flow Chat home window and opens with Flow ready at startup.
 - Flow Chat keeps its own persistent history, Core-owned Flow request route, background worker, live Process Monitor, and safe busy/error recovery.
-- The existing dedicated-chat surface remains intact under the `Chats` navigation page, including chat management, annotations, and the full right-side workspace.
-- Code and Habit Tracker are visibly named foundation-pending pages that retain their widgets when navigating.
+- The existing dedicated-chat surface opens in its own reusable top-level `Chats` window, including chat management, annotations, and the full right-side workspace.
+- Code and Habit Tracker open as independent reusable windows that retain their widget state while hidden or reopened.
 - The GUI receives Flow history through Core and never reads Flow storage directly.
 - Flow renders shared Process Monitor events as they arrive and replaces that provisional view with Core's completed event payload.
-- Mind Map is a persistent Core-backed graph page with an interactive layout canvas, while Code and Habit Tracker remain named placeholder areas only.
-- Canvas is now a persistent Core-backed workspace page with a real infinite-style grid, mouse-drag panning, and wheel zoom; structured Canvas objects remain the next phase.
+- After Flow approval, global workspace panels and the Mind Map refresh without selecting or opening a dedicated chat.
+- Mind Map opens as a persistent Core-backed graph window with an interactive layout canvas. Habit Tracker is a local task-planning workspace; Code remains a named placeholder window.
+- Canvas opens as a persistent Core-backed spatial conversation window with typed movable blocks, semantic lines/arrows, root and context controls, an optional instruction field, background AMADEUS sending, and movable AMADEUS response blocks.
+
+## Independent Module Windows
+
+- Flow Chat remains mounted in the primary AMADEUS window and never disappears when another module opens.
+- Chats, Code, Mind Map, Canvas, and Habit Tracker each open in their own top-level window.
+- Several module windows can stay open at the same time for parallel work.
+- Reopening an already-created module raises and focuses the existing window instead of constructing a duplicate view or duplicate module state.
+- Closing one module window does not close Flow Chat or the other modules.
+- Closing the Flow Chat main window coordinates final shutdown and closes every module window after active workers finish.
+- The `ModuleWindowManager` owns only GUI window lifecycle; all windows continue using the same Core and module instances.
 
 The Process Monitor shows real events such as input received, annotation check, routing decision, chat module use, LLM call status, errors, and output ready.
 
@@ -59,6 +72,8 @@ The Process Monitor shows real events such as input received, annotation check, 
 - Message numbers are chat-local and are reconstructed from stored JSONL order when a chat loads.
 - `New Chat` now opens a dialog with title and optional description.
 - `New Chat` and `Edit Chat` collect title, description, priority, purpose, and scope; Edit Chat preserves the active transcript and UI state.
+- Dedicated Chats expose a compact response-length selector beneath Send with None, Short, Normal, Large, and Full Send titles; it persists to the active chat immediately.
+- NONE response payloads retain the user message and Process Monitor lifecycle but do not add an AMADEUS transcript bubble.
 - Chat controls, including Edit Chat, remain disabled while AMADEUS is answering.
 - Chat description is shown in the right-side Memory panel as current chat context.
 - Memory panel now combines current chat context with explicit memory lists when `[memory][list]` is used.
@@ -98,6 +113,13 @@ The Process Monitor shows real events such as input received, annotation check, 
 - Side Ask can create a new chat from its Q&A.
 - Added Add Comment button for selected chat text.
 - Right panel includes a Comments tab for current-chat comments.
+
+## Chat Data
+
+- Dedicated Chats include a Chat Data tab, separate from Materials.
+- Analyze / Refresh explicitly generates title/description candidates, short bullets, detailed summary, and model metadata; it does not run on panel refresh.
+- Create Export explicitly uses the existing chat export service and records only the export reference.
+- Suggested inferred writes are shown as non-executable information.
 
 ## Phase 6 Comment Follow-Up
 
@@ -140,6 +162,8 @@ The Process Monitor shows real events such as input received, annotation check, 
 
 - Flow Chat now uses Enter to send and Shift+Enter to insert a new line, matching dedicated Chats.
 - Flow Chat and Chats each have an arrow control that hides or restores their side panel without clearing its state.
+- Flow Chat and dedicated Chats keep their original left-aligned transcript style with two blank rows between messages for readability.
+- User and AMADEUS transcript headings are bold while the message body remains normal weight.
 
 ## Live Process Monitor Coverage
 
@@ -147,6 +171,34 @@ The Process Monitor shows real events such as input received, annotation check, 
 
 ## Mind Map Page
 
-- The Mind Map sidebar page uses `MindMapView` instead of the former placeholder without changing the order or persistence of other stacked pages.
+- The Mind Map module uses one persistent `MindMapView` hosted by its independent reusable top-level window.
 - The view receives snapshots and graph-change subscriptions through Core only, then renders its SQLite-backed nodes and links on a zoomable `QGraphicsView` canvas.
 - Node/link CRUD, drag position persistence, search, layout, and JSON import/export remain module-owned operations invoked through Core wrappers.
+
+## Linked Mind Map chat context
+
+- The Chats right panel includes a Linked tab showing direct graph neighbors and whether each relationship enters prompt context.
+- Source-backed Sheet and Comment nodes open their owning chat/panel.
+- Mind Map links render as straight lines with a midpoint detail control, and dragging wakes/resumes graph physics.
+
+## Canvas Workspaces
+
+- Canvas now exposes a lightweight workspace selector with New, Rename, and Delete controls.
+- Switching workspaces re-renders one independent persisted Canvas document without mixing roots, baselines, send history, connectors, or undo state.
+- Workspace deletion is confirmed in the GUI and archives the document instead of permanently deleting it.
+- Workspace controls are disabled while a Canvas LLM request is active, preventing a response from being committed into the wrong project.
+
+## Habit Tracker
+
+- Habit Tracker is now a reusable local workspace instead of a placeholder.
+- It provides routines, one-time tasks, calendar events, Eisenhower tasks, timers, and due-alarm notifications through its own local SQLite service.
+- The port intentionally excludes the standalone task manager's embedded AMADEUS chat UI; Flow Chat remains the one AMADEUS conversation surface.
+
+## Module Metadata Display
+
+- `[metadata]` results open in the existing Memory tab as labelled verified `FEATURES.md` and/or `FUTURE_UPDATES.md` content.
+- Metadata display omits the normal current-chat memory prefix so the fixed-file source text remains exact.
+
+## Core ownership cleanup — 2026-09-12
+
+- Implemented: Canvas and Habit Tracker operations use Core routes. MainWindow injects the shared Habit facade, avoiding a second independent application service.

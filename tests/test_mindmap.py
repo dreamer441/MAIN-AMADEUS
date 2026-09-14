@@ -58,6 +58,26 @@ class MindMapCoreTests(unittest.TestCase):
         self.assertEqual([], list(snapshot.links))
         self.assertEqual("node_deleted", changes[-1]["event_type"])
 
+    def test_context_package_expands_search_results_through_explicit_links(self) -> None:
+        root = self.core.create_mind_map_node(
+            title="Model Routing", description="Routes tasks by complexity", importance=0.9
+        )
+        dependency = self.core.create_mind_map_node(
+            title="Chat Metadata", description="Provides task type and scope"
+        )
+        link = self.core.create_mind_map_link(
+            source_node_id=root.node_id,
+            target_node_id=dependency.node_id,
+            link_type="depends_on",
+            evidence="Routing decisions require structured chat metadata.",
+        )
+
+        package = self.core.build_mind_map_context("routing", limit=4, depth=1)
+
+        self.assertEqual((root.node_id,), package.seed_node_ids)
+        self.assertEqual({root.node_id, dependency.node_id}, {node.node_id for node in package.nodes})
+        self.assertEqual([link.link_id], [item.link_id for item in package.links])
+
     def test_recent_node_retrieval_is_bounded_and_newest_first(self) -> None:
         first = self.core.create_mind_map_node(title="First")
         second = self.core.create_mind_map_node(title="Second")
@@ -286,7 +306,8 @@ class MindMapGuiWorkerTests(unittest.TestCase):
 
         core = SlowCore()
         view = MindMapView(core)
-        self.assertTrue(core.called.wait(1000))
+        self.addCleanup(view.close)
+        self.assertTrue(core.called.wait(1))
         self.assertTrue(view._busy)
         self.assertTrue(all(not widget.isEnabled() for widget in view._busy_widgets))
         self.assertFalse(view.canvas.isEnabled())
@@ -298,10 +319,70 @@ class MindMapGuiWorkerTests(unittest.TestCase):
             self.application.processEvents()
             time.sleep(0.01)
         self.assertFalse(view._busy)
-        self.assertTrue(all(widget.isEnabled() for widget in view._busy_widgets))
+        # Empty graphs keep selection-dependent actions disabled after a read.
+        # Recovery restores navigation/creation, not unavailable node operations.
+        self.assertTrue(view.search_input.isEnabled())
+        self.assertTrue(view.search_button.isEnabled())
+        self.assertTrue(view.quick_new_button.isEnabled())
+        self.assertFalse(view.quick_edit_button.isEnabled())
+        self.assertFalse(view.action_buttons["Delete Selected"].isEnabled())
         self.assertTrue(view.canvas.isEnabled())
         view.close()
         self.assertFalse(view.has_active_workers())
+
+    def test_canvas_backed_nodes_use_rectangular_shapes_while_chat_nodes_remain_elliptical(self) -> None:
+        from PyQt6.QtCore import QPointF
+        from mindmap.gui.items import GraphNodeItem
+        from mindmap.models import SourceReference
+
+        canvas_node = GraphNode(
+            "canvas", "main", "canvas", "Canvas block",
+            source_reference=SourceReference("canvas_block", "block-1"),
+        )
+        chat_node = GraphNode(
+            "chat", "main", "chat", "Chat",
+            source_reference=SourceReference("chat", "chat-1"),
+        )
+        canvas_item = GraphNodeItem(canvas_node, moved_callback=lambda *_args: None)
+        chat_item = GraphNodeItem(chat_node, moved_callback=lambda *_args: None)
+
+        canvas_bounds = canvas_item.shape().boundingRect()
+        chat_bounds = chat_item.shape().boundingRect()
+        rectangle = canvas_item._canvas_rectangle()
+
+        self.assertNotEqual(canvas_bounds, chat_bounds)
+        self.assertEqual((84.0, 40.0), (rectangle.width(), rectangle.height()))
+        self.assertTrue(chat_item.shape().contains(QPointF(0, 0)))
+        self.assertEqual(chat_bounds.width(), chat_bounds.height())
+
+    def test_canvas_link_endpoint_stops_at_rectangle_edge_without_changing_circle_geometry(self) -> None:
+        from mindmap.gui.items import GraphLinkItem, GraphNodeItem
+        from mindmap.models import SourceReference
+
+        canvas_node = GraphNode(
+            "canvas", "main", "canvas", "Canvas block",
+            source_reference=SourceReference("canvas_block", "block-1"),
+        )
+        chat_node = GraphNode(
+            "chat", "main", "chat", "Chat", position_x=200.0,
+            source_reference=SourceReference("chat", "chat-1"),
+        )
+        canvas_item = GraphNodeItem(canvas_node, moved_callback=lambda *_args: None)
+        chat_item = GraphNodeItem(chat_node, moved_callback=lambda *_args: None)
+        link_item = GraphLinkItem(
+            GraphLink("link", "main", "canvas", "chat", "related_to"),
+            canvas_item,
+            chat_item,
+        )
+
+        path = link_item.path()
+        start = path.elementAt(0)
+        end = path.elementAt(1)
+
+        self.assertAlmostEqual(canvas_item._canvas_rectangle().right(), start.x)
+        self.assertAlmostEqual(0.0, start.y)
+        self.assertAlmostEqual(chat_item.pos().x() - (chat_item.radius + 3.0), end.x)
+        self.assertAlmostEqual(0.0, end.y)
 
 
 class MindMapPhysicsTests(unittest.TestCase):
@@ -369,9 +450,14 @@ class MindMapGuiStateTests(unittest.TestCase):
         view._render_snapshot(GraphSnapshot("main", nodes, ()))
 
         self.assertEqual(["Nodes", "Actions"], [view.left_tabs.tabText(index) for index in range(view.left_tabs.count())])
-        self.assertEqual(["Context", "Node Details"], [view.right_tabs.tabText(index) for index in range(view.right_tabs.count())])
+        self.assertEqual(["Context", "Details", "Connections"], [view.right_tabs.tabText(index) for index in range(view.right_tabs.count())])
         self.assertEqual(["IDEA", "  Idea node", "TASK", "  Task node"], [view.node_list.item(index).text() for index in range(view.node_list.count())])
         self.assertTrue({"Pin Node", "Set as Central", "Force Layout"}.issubset(view.action_buttons))
+        self.assertEqual("Edit Node", view.quick_edit_button.text())
+        self.assertFalse(view.quick_edit_button.isEnabled())
+        view._select_node("task")
+        self.application.processEvents()
+        self.assertTrue(view.quick_edit_button.isEnabled())
         view._show_hover_context("task")
         self.assertIn("Stored task context", view.context_summary.toPlainText())
         view.close()

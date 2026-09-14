@@ -12,6 +12,7 @@ Important boundary:
 - If a file/folder cannot be verified from disk, the caller should say so.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -42,6 +43,7 @@ MODULE_METADATA_FILES = {
     "future": ("FUTURE_UPDATES.md",),
     "both": ("FEATURES.md", "FUTURE_UPDATES.md"),
 }
+MetadataPayloadFormatter = Callable[[tuple["ModuleMetadataDocument", ...], tuple[str, ...], bool], str]
 
 
 class ProjectModuleNotFoundError(ValueError):
@@ -346,8 +348,13 @@ class ProjectFileReader:
         module_name: str = "",
         document_kind: str = "both",
         max_characters: int = DEFAULT_MAX_CHARACTERS,
+        format_payload: MetadataPayloadFormatter | None = None,
     ) -> ModuleMetadataRead:
-        """Read only fixed metadata documents within one aggregate character budget."""
+        """Read fixed metadata within a raw or formatter-defined aggregate budget.
+
+        A caller that renders this result for a user-facing payload supplies its
+        formatter so labels and notices count toward the same reader-owned limit.
+        """
         normalized_kind = document_kind.strip().lower()
         if normalized_kind not in MODULE_METADATA_FILES:
             raise ValueError(f"Unsupported metadata document kind: {document_kind}")
@@ -360,42 +367,107 @@ class ProjectFileReader:
         )
         documents: list[ModuleMetadataDocument] = []
         missing: list[str] = []
-        remaining = max_characters
         truncated = False
 
         for verified_module_name in module_names:
             for file_name in MODULE_METADATA_FILES[normalized_kind]:
-                if remaining <= 0:
-                    truncated = True
-                    break
                 try:
-                    content = self.read_module_file(verified_module_name, file_name, remaining)
+                    content = self.read_module_file(verified_module_name, file_name, max_characters)
                 except (FileNotFoundError, ProjectFileNotFoundError, ProjectModuleNotFoundError):
-                    missing.append(f"{verified_module_name}/{file_name}")
+                    candidate_missing = tuple([*missing, f"{verified_module_name}/{file_name}"])
+                    if self._metadata_payload_fits(
+                        tuple(documents), candidate_missing, True, max_characters, format_payload
+                    ):
+                        missing.append(candidate_missing[-1])
+                    else:
+                        truncated = True
                     continue
 
-                documents.append(
-                    ModuleMetadataDocument(
-                        module_name=content.module_name,
-                        file_name=content.file_name,
-                        content=content.content,
-                        total_characters=content.total_characters,
-                        total_lines=content.total_lines,
-                        truncated=content.truncated,
-                    )
+                document = ModuleMetadataDocument(
+                    module_name=content.module_name,
+                    file_name=content.file_name,
+                    content=content.content,
+                    total_characters=content.total_characters,
+                    total_lines=content.total_lines,
+                    truncated=content.truncated,
                 )
-                remaining -= len(content.content)
-                if content.truncated:
+                fitted_document = self._fit_metadata_document(
+                    tuple(documents), tuple(missing), document, max_characters, format_payload
+                )
+                if fitted_document is None:
                     truncated = True
-                    break
-            if truncated:
-                break
+                    continue
+                documents.append(fitted_document)
+                if fitted_document.truncated:
+                    truncated = True
 
         return ModuleMetadataRead(
             documents=tuple(documents),
             missing=tuple(missing),
             truncated=truncated,
         )
+
+    @staticmethod
+    def _metadata_payload_fits(
+        documents: tuple[ModuleMetadataDocument, ...],
+        missing: tuple[str, ...],
+        truncated: bool,
+        max_characters: int,
+        format_payload: MetadataPayloadFormatter | None,
+    ) -> bool:
+        """Measure a candidate through the caller's renderer when one is supplied."""
+        if format_payload is None:
+            return sum(len(document.content) for document in documents) <= max_characters
+        return len(format_payload(documents, missing, truncated)) <= max_characters
+
+    def _fit_metadata_document(
+        self,
+        documents: tuple[ModuleMetadataDocument, ...],
+        missing: tuple[str, ...],
+        document: ModuleMetadataDocument,
+        max_characters: int,
+        format_payload: MetadataPayloadFormatter | None,
+    ) -> ModuleMetadataDocument | None:
+        """Return the longest document prefix whose rendered payload stays bounded."""
+        if format_payload is None:
+            available = max(0, max_characters - sum(len(item.content) for item in documents))
+            if available == 0 and document.content:
+                return None
+            return ModuleMetadataDocument(
+                module_name=document.module_name,
+                file_name=document.file_name,
+                content=document.content[:available],
+                total_characters=document.total_characters,
+                total_lines=document.total_lines,
+                truncated=document.truncated or len(document.content) > available,
+            )
+
+        lower, upper = 0, len(document.content)
+        best: ModuleMetadataDocument | None = None
+        while lower <= upper:
+            length = (lower + upper) // 2
+            candidate = ModuleMetadataDocument(
+                module_name=document.module_name,
+                file_name=document.file_name,
+                content=document.content[:length],
+                total_characters=document.total_characters,
+                total_lines=document.total_lines,
+                truncated=document.truncated or length < len(document.content),
+            )
+            if self._metadata_payload_fits(
+                (*documents, candidate),
+                missing,
+                # Reserve the notice now: a later short document or missing path
+                # can require truncation after this document has been accepted.
+                True,
+                max_characters,
+                format_payload,
+            ):
+                best = candidate
+                lower = length + 1
+            else:
+                upper = length - 1
+        return best
 
     def list_module_files(self, requested_name: str, recursive: bool = False) -> ModuleFileListing:
         """Return an exact file listing from a real module folder.

@@ -5,10 +5,12 @@ routing, read files, manage GUI state, or store history. Core supplies selected
 context, and Chat turns that context into one stable LLM request.
 """
 
+import inspect
 from typing import Protocol
 
 from amadeus_trace import TraceLogger
 from llm_client import OllamaClient, OllamaClientError
+from response_modes import ResponseModeDecision, resolve_response_mode
 
 
 AMADEUS_BASE_SYSTEM_PROMPT = """
@@ -20,6 +22,11 @@ For AMADEUS project/module questions in normal chat, summarize or explain only f
 Do not perform exact file reading from normal chat. Exact verified file access belongs to the [file] annotation.
 Never invent file names, folder contents, module names, code facts, line counts, or exact file content.
 If verified context is missing or incomplete, say that exact verification requires [file].
+When a prompt contains [EXACT LINKED MIND MAP WORKSPACE DATA] or [AMADEUS MIND MAP RETRIEVAL], treat every field as literal source data.
+Never invent missing node labels, names, categories, IDs, relationships, descriptions, sheet contents, or meanings.
+Do not rename linked objects, and do not call them memory unless their literal type is memory.
+When asked what is written in a node or sheet, report only its explicit Description and Content fields; say when either field is empty.
+Exact linked/retrieved graph records override older assistant statements or guesses about those same objects.
 If you need more information, ask a concise follow-up question.
 """.strip()
 
@@ -53,6 +60,7 @@ class AmadeusChatModule:
         identity_prompt: str | None = None,
         trace_logger: TraceLogger | None = None,
         raise_llm_errors: bool = False,
+        response_decision: ResponseModeDecision | None = None,
     ) -> str:
         """Return an AMADEUS response for the provided user message."""
         clean_message = message.strip()
@@ -70,6 +78,7 @@ class AmadeusChatModule:
             callable_context=callable_context,
         )
 
+        decision = response_decision or resolve_response_mode()
         try:
             # This event represents a real API call boundary, not AMADEUS's hidden reasoning.
             self._trace(
@@ -78,10 +87,7 @@ class AmadeusChatModule:
                 "Preparing Answer Through Configured LLM",
                 "Sending a prepared request to the configured LLM.",
             )
-            response = self.llm_client.generate(
-                prompt=prompt,
-                system_prompt=self._build_system_prompt(identity_prompt),
-            )
+            response = self._generate_with_policy(prompt, identity_prompt, decision)
             self._trace(
                 trace_logger,
                 "llm",
@@ -102,14 +108,40 @@ class AmadeusChatModule:
                 raise
             return f"AMADEUS LLM error: {error}"
 
-    def _build_system_prompt(self, identity_prompt: str | None = None) -> str:
+    def _generate_with_policy(
+        self,
+        prompt: str,
+        identity_prompt: str | None,
+        response_decision: ResponseModeDecision,
+    ) -> str:
+        """Pass the policy budget to capable backends without breaking older test adapters."""
+        system_prompt = self._build_system_prompt(identity_prompt, response_decision)
+        generate = self.llm_client.generate
+        if "num_predict" in inspect.signature(generate).parameters:
+            return generate(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                num_predict=response_decision.policy.hard_limit_tokens,
+            )
+        return generate(prompt=prompt, system_prompt=system_prompt)
+
+    def _build_system_prompt(
+        self,
+        identity_prompt: str | None = None,
+        response_decision: ResponseModeDecision | None = None,
+    ) -> str:
         """Combine stable chat rules with AMADEUS's global identity."""
-        if not identity_prompt:
-            return AMADEUS_BASE_SYSTEM_PROMPT
+        sections = [AMADEUS_BASE_SYSTEM_PROMPT]
 
         # Identity is injected as system context because it should influence all normal chat.
         # It stays outside the user prompt so old conversation history cannot override it as easily.
-        return f"{AMADEUS_BASE_SYSTEM_PROMPT}\n\n{identity_prompt}"
+        if identity_prompt:
+            sections.append(identity_prompt)
+        if response_decision:
+            sections.append(
+                f"Response mode: {response_decision.mode.value}\n{response_decision.policy.detail_instruction}"
+            )
+        return "\n\n".join(sections)
 
     def _build_prompt(
         self,
@@ -130,7 +162,8 @@ class AmadeusChatModule:
         if chat_workspace_context:
             prompt_sections.append(
                 "Use this current chat workspace context to understand what this conversation is for. "
-                "This is active chat metadata, not a separate user instruction and not global memory.\n\n"
+                "This is active chat metadata and exact linked workspace data, not a separate user instruction and not global memory. "
+                "Treat literal linked-object fields as authoritative and do not expand them with plausible-sounding labels or content.\n\n"
                 f"{chat_workspace_context}"
             )
 

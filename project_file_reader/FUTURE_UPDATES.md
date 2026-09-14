@@ -24,3 +24,12 @@ Do not add file editing, deletion, autonomy, or unrestricted disk scanning insid
 - Add a verified-file reference object so `[current][last_file]` can reuse opened file content without relying on chat history truncation.
 - Add modified-time metadata and human-readable size formatting.
 - Add optional recursive tree expansion depth limits for very large projects.
+
+## Module Metadata Follow-Up
+
+- Add a configurable aggregate metadata character limit while retaining the fixed-file, verified-module boundary.
+- Add richer metadata filtering only for the fixed supported document kinds.
+
+## Core ownership cleanup — 2026-09-12
+
+- Ownership direction: Keep UI-oriented read adapters separate from safe filesystem access and chat execution.

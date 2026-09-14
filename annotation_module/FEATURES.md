@@ -82,9 +82,10 @@ The Annotation Module detects bracket-style commands such as `[file]` and routes
 
 ## Mind Map Retrieval Annotation
 
-- `[mindmap][search text] question` searches up to 10 matching Mind Map nodes and supplies them as one-request callable context.
-- `[mindmap] question` supplies at most 10 most recently updated available nodes; it never injects the whole graph.
-- Retrieved context contains only node ID, title, type, description, content, importance, confidence, and status. Arbitrary node metadata, source references, graph links, and storage internals are excluded.
+- `[mindmap][search text] question` retrieves up to 8 matching seed nodes, expands bounded direct relationships, and caps the complete context package at 28 nodes.
+- `[mindmap] question` uses up to 8 recent seed nodes with the same bounded relationship expansion; it never injects the whole graph.
+- Retrieved context includes literal node fields, safe source references, and explicit retrieved relationship direction/strength/confidence/permanence/evidence while excluding arbitrary metadata and storage internals.
+- Node content uses visible delimiters and strict no-invention instructions so local models do not fabricate labels or reinterpret stored sheet text.
 - Retrieval uses the injected `MindMapModule` public facade only. Annotation Module never accesses Mind Map SQLite storage.
 - A no-match result remains an explicit no-context callable block so Chat can answer honestly; retrieval failures return a safe readable response without calling Chat.
 
@@ -96,3 +97,25 @@ The Annotation Module detects bracket-style commands such as `[file]` and routes
 - The parser returns ordered blocks and only text outside completed blocks as the normal prompt.
 - Existing single leading annotation syntax remains available unchanged.
 - Slash suggestions include `[end]` for closing a block.
+
+## Mind Map integration
+
+- `[mindmap]` is available in the slash suggestion palette.
+- Selecting `[mindmap]` exposes guided recent-context and search-query forms.
+- Saving explicit memory through `[memory]` now notifies the Mind Map synchronization adapter so the memory can gain a source-backed node.
+
+## Shared Creation Annotations
+
+- `[sheet][create] request` and `[memory][save] request` prepare typed creation requests without writing data.
+- `/create-chat request` is suggested and parsed consistently in Flow and dedicated chat.
+- Creation requests may end with `; scope: global` or `; scope: chat`; existing list, scoped-save, and callable-context forms remain unchanged.
+
+## Module Metadata Annotation
+
+- `[metadata][all][features|future|both]` opens verified metadata for all indexed modules, while `[metadata][module][module_name][features|future|both]` opens one verified module.
+- Guided suggestions expose the all/module, verified-module, and document-kind choices without accepting arbitrary file names.
+- Metadata results open in the Memory tab with exact labelled source text and do not prepend ordinary chat-memory context.
+
+## Core ownership cleanup — 2026-09-12
+
+- Implemented: Selected-context conversation execution now belongs to Chat Workspace; the old router import is a compatibility export. Sheet syntax is interpreted in the annotation handler and passed as plain scope/reference values to Sheets.

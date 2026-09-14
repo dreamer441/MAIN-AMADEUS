@@ -19,3 +19,15 @@
 See `docs/DEVELOPMENT_WORKFLOW_RULES.md` for the detailed documentation and code-comment workflow.
 16. Memory V1 is explicit only: AMADEUS saves durable memory only when Dato uses `[memory]`.
 17. Memory lists belong in the right panel by default so main chat stays clean.
+
+## Current ownership conventions (2026-09-12)
+
+- Application startup wiring belongs in `amadeus_app`; Core exposes explicit routes.
+- Multi-owner graph/content synchronization belongs in `workspace_integration`.
+- Module views may import their widgets and models, but AMADEUS user operations
+  route through Core using shared application service instances.
+- Module-owned workflows may consume injected public services; they must not
+  reach into another module's private implementation or import Core.
+- Existing explicit approved Creation/Mind Map memory actions also remain
+  supported. The memory rule means no autonomous saving, not removal of those
+  implemented user-controlled paths.

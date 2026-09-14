@@ -9,9 +9,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from annotation_module.annotation_parser import ParsedAnnotation
+from typing import Protocol, Sequence
 from sheets_module.sheet_entry import SheetEntry
 from sheets_module.sheet_store import SheetStore
+
+
+class SheetTargetArguments(Protocol):
+    """Structural compatibility for callers supplying a parsed sheet locator."""
+
+    arguments: Sequence[str]
+    normalized_arguments: Sequence[str]
 
 
 class SheetService:
@@ -81,9 +88,20 @@ class SheetService:
             },
         }
 
+    def resolve_target(
+        self, chat_id: str, *, scope: str = "all", reference: str | None = None
+    ) -> tuple[SheetEntry | None, str | None, str]:
+        """Resolve plain workspace scope and locator values without parser types."""
+        if scope not in {"all", "chat", "global"}:
+            return None, f"Unknown sheet list scope: `{scope}`", "all"
+        if reference is None:
+            return None, None, scope
+        sheet, problem = self.store.find_sheet(reference=reference, chat_id=chat_id, scope=scope)
+        return sheet, problem, scope
+
     def resolve_annotation_target(
         self,
-        annotation: ParsedAnnotation,
+        annotation: SheetTargetArguments,
         chat_id: str,
     ) -> tuple[SheetEntry | None, str | None, str]:
         """Resolve `[sheet]` bracket arguments into a visible sheet.
@@ -110,8 +128,7 @@ class SheetService:
             scope = "all"
             reference = annotation.arguments[0]
 
-        sheet, problem = self.store.find_sheet(reference=reference, chat_id=chat_id, scope=scope)
-        return sheet, problem, scope
+        return self.resolve_target(chat_id, scope=scope, reference=reference)
 
     def build_prompt_context(self, sheet: SheetEntry) -> str:
         """Format one sheet as explicit callable prompt context.

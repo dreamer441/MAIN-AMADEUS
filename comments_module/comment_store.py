@@ -25,17 +25,26 @@ class CommentStore:
         if not self.path.exists():
             self._write_all([])
 
-    def add_comment(self, chat_id: str, comment: str, selected_text: str = "") -> CommentEntry:
-        """Create one comment attached to the current chat and selected text."""
+    def add_comment(self, chat_id: str | None, comment: str, selected_text: str = "", scope: str | None = None) -> CommentEntry:
+        """Create one global or chat-scoped comment."""
         clean_comment = comment.strip()
         clean_selected = selected_text.strip()
+        clean_chat_id = chat_id.strip() if isinstance(chat_id, str) else ""
+        clean_scope = (scope or ("chat" if clean_chat_id else "global")).strip().lower()
         if not clean_comment:
             raise ValueError("Comment text cannot be empty.")
+        if clean_scope not in {"chat", "global"}:
+            raise ValueError("Comment scope must be chat or global.")
+        if clean_scope == "chat" and not clean_chat_id:
+            raise ValueError("Chat-scoped comments require a chat id.")
+        if clean_scope == "global" and clean_chat_id:
+            raise ValueError("Global comments cannot be linked to a chat.")
 
         existing = self.list_all()
         entry = CommentEntry(
             comment_id=self._new_comment_id(existing),
-            chat_id=chat_id,
+            chat_id=clean_chat_id or None,
+            scope=clean_scope,
             comment=clean_comment,
             selected_text=clean_selected,
             created_at=self._now(),
@@ -65,6 +74,7 @@ class CommentStore:
                 updated = CommentEntry(
                     comment_id=entry.comment_id,
                     chat_id=entry.chat_id,
+                    scope=entry.scope,
                     comment=clean_comment,
                     selected_text=entry.selected_text,
                     created_at=entry.created_at,
@@ -90,7 +100,11 @@ class CommentStore:
 
     def list_for_chat(self, chat_id: str) -> list[CommentEntry]:
         """Return comments attached to one chat in creation order."""
-        return [entry for entry in self.list_all() if entry.chat_id == chat_id]
+        return [entry for entry in self.list_all() if entry.scope == "chat" and entry.chat_id == chat_id]
+
+    def list_global(self) -> list[CommentEntry]:
+        """Return unlinked global comments in creation order."""
+        return [entry for entry in self.list_all() if entry.scope == "global"]
 
     def list_all(self) -> list[CommentEntry]:
         """Read all parseable comments from JSON storage."""

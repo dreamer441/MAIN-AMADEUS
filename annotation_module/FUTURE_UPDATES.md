@@ -28,6 +28,7 @@ Annotations should stay deterministic command routes. They should not become a p
 - Add `[memory][update][id] new text`.
 - Add `[memory][module]` for module-specific memory.
 - Add confirmation flow if AMADEUS suggests saving memory herself.
+- Keep creation grammar limited to `[memory][save]` and `[sheet][create]`; do not add direct persistence to annotation handlers.
 
 ## Sheets / Export Annotation Roadmap
 
@@ -59,3 +60,15 @@ Annotations should stay deterministic command routes. They should not become a p
 ## File Annotation Context
 
 - [x] Let Code Viewer context select one exact line (`15`) or an inclusive range (`15-30`).
+
+## Mind Map annotation follow-ups
+
+- Add guided `[mindmap]` query suggestions and optional node/link selection paths without mixing them into automatic chat context.
+
+## Module Metadata Annotation Follow-Up
+
+- Add guided filtering across the fixed metadata document kinds when a clear user workflow requires it.
+
+## Core ownership cleanup — 2026-09-12
+
+- Ownership direction: Remove legacy execution imports after consumers migrate; keep conversation lifecycle out of handlers.

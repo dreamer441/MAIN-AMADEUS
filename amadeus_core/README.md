@@ -1,43 +1,23 @@
 # AMADEUS Core
 
-`amadeus_core` is the lightweight coordinator for the AMADEUS shell.
+Core exposes the stable `AmadeusCore` entry point, resolves registered modules and
+forwards explicit public requests. Feature execution is owned elsewhere.
 
-Core is responsible for:
+| File | Responsibility |
+|---|---|
+| `core.py` | Stable public class |
+| `core_coordinator.py` | Existing public API as owner forwarding methods |
+| `module_registry.py` | Named registration, optional lookup and required lookup |
+| `module_routes.py` | Explicit Canvas and Habit routes used by module views |
+| `pending_actions.py` | Compatibility export from Permissions |
+| `creation_workspace_adapter.py` | Compatibility export from Workspace Integration |
 
-- registering modules
-- checking annotations
-- routing messages
-- requesting selected context from Context Builder
-- preparing identity prompt injection
-- creating a Process Monitor trace session for each message
-- returning the final response payload to the GUI
+Application setup lives in `amadeus_app`. Chat execution lives in `chat_workspace`;
+Flow and Canvas own their request handlers. Core contains no prompts, annotation
+parsing, metadata generation, exchange writes or approval-policy implementation.
+Constructor model/root injection remains supported; registry injection allows
+routing tests without constructing storage or importing Qt.
 
-Core is not responsible for generating LLM responses, reading every file directly, or owning feature-specific behavior.
-
-The current `handle_user_message()` response shape is:
-
-```python
-{
-    "response": "AMADEUS response text",
-    "trace": "compact trace text",
-    "trace_detailed": "detailed trace text",
-    "trace_events": [],
-}
-```
-
-The trace data represents real execution events only. It must not be used to invent or display hidden chain-of-thought.
-
-## Flow Route
-
-`handle_flow_message()` is a separate Core route for the Flow home conversation. It uses the shared Chat module, identity prompt builder, and Process Monitor event lifecycle while leaving normal dedicated-chat routing unchanged. Flow history is loaded and persisted through `flow_chat` under `data/flow_chat/`, separately from `data/chats/`.
-
-Flow context has two isolated layers: Layer 0 is recent Flow history; Layer 1 is current dedicated-chat registry metadata. The registry projects only `chat_id`, title, description, priority, purpose, and scope and reads no dedicated-chat message bodies. Scope is descriptive V1 metadata only, with no automatic cross-chat retrieval. Its list is evaluated when Flow builds context, so dedicated-chat create, metadata-update, and delete mutations are reflected without duplicating registry state.
-
-## Memory V1 Role
-
-Core owns only the routing: it registers `memory_module`, routes `[memory]` annotations, and passes memory context into Context Builder/Chat. Memory save/list logic stays inside `memory_module`.
-
-
-## Canvas module boundary
-
-Core now owns a registered `CanvasModule` facade and exposes only safe workspace metadata to the GUI. PyQt scene rendering stays inside `canvas_module.gui`. Future Canvas persistence, context assembly, LLM requests, and Mind Map conversion should be added through Canvas public services and narrow Core routes rather than direct GUI/storage coupling.
+Existing service accessors remain for compatibility. New GUI operations use Core
+methods or `core.canvas` / `core.habits`. No arbitrary attribute-based command
+routing is exposed. See `docs/ARCHITECTURE.md` for the complete map.

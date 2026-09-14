@@ -41,14 +41,18 @@ class RightPanelWidget(QTabWidget):
     comment_delete_requested = pyqtSignal(str)
     comment_jump_requested = pyqtSignal(int)
     comment_refresh_requested = pyqtSignal()
+    chat_data_refresh_requested = pyqtSignal()
+    chat_data_export_requested = pyqtSignal()
 
     PROCESS_TAB_INDEX = 0
     CODE_TAB_INDEX = 1
     MEMORY_TAB_INDEX = 2
-    SHEETS_TAB_INDEX = 3
-    MATERIALS_TAB_INDEX = 4
-    SIDE_ASK_TAB_INDEX = 5
-    COMMENTS_TAB_INDEX = 6
+    CHAT_DATA_TAB_INDEX = 3
+    SHEETS_TAB_INDEX = 4
+    MATERIALS_TAB_INDEX = 5
+    SIDE_ASK_TAB_INDEX = 6
+    COMMENTS_TAB_INDEX = 7
+    LINKED_CONTEXT_TAB_INDEX = 8
 
     def __init__(self, initial_trace_text: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -60,10 +64,12 @@ class RightPanelWidget(QTabWidget):
         self.addTab(self._build_process_monitor_tab(initial_trace_text), "Process Monitor")
         self.addTab(self._build_code_viewer_tab(), "Code Viewer")
         self.addTab(self._build_memory_tab(), "Memory")
+        self.addTab(self._build_chat_data_tab(), "Chat Data")
         self.addTab(self._build_sheets_tab(), "Sheets")
         self.addTab(self._build_materials_tab(), "Materials")
         self.addTab(self._build_side_ask_tab(), "Side Ask")
         self.addTab(self._build_comments_tab(), "Comments")
+        self.addTab(self._build_linked_context_tab(), "Linked")
 
     def _build_process_monitor_tab(self, initial_trace_text: str) -> QWidget:
         """Build the tab that displays real execution events for the latest request."""
@@ -263,6 +269,32 @@ class RightPanelWidget(QTabWidget):
         layout.addLayout(button_row)
         return tab
 
+    def _build_chat_data_tab(self) -> QWidget:
+        """Build explicit analysis/export controls without making them chat actions."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        self.chat_data_title = QLabel("Chat Data")
+        self.chat_data_title.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.chat_data_meta = QLabel("Analysis is generated only when you select Refresh.")
+        self.chat_data_meta.setWordWrap(True)
+        self.chat_data_meta.setStyleSheet("color: #666; padding: 2px;")
+        self.chat_data_viewer = QTextEdit()
+        self.chat_data_viewer.setReadOnly(True)
+        self.chat_data_viewer.setPlaceholderText("Select Refresh to generate this chat's summaries.")
+        buttons = QHBoxLayout()
+        self.chat_data_refresh_button = QPushButton("Analyze / Refresh")
+        self.chat_data_export_button = QPushButton("Create Export")
+        self.chat_data_refresh_button.clicked.connect(self.chat_data_refresh_requested.emit)
+        self.chat_data_export_button.clicked.connect(self.chat_data_export_requested.emit)
+        buttons.addWidget(self.chat_data_refresh_button)
+        buttons.addWidget(self.chat_data_export_button)
+        buttons.addStretch()
+        layout.addWidget(self.chat_data_title)
+        layout.addWidget(self.chat_data_meta)
+        layout.addLayout(buttons)
+        layout.addWidget(self.chat_data_viewer)
+        return tab
+
     def _build_materials_tab(self) -> QWidget:
         """Build Materials controls; material data remains Core/module-owned."""
         tab = QWidget()
@@ -427,6 +459,23 @@ class RightPanelWidget(QTabWidget):
         self.state.set_trace_events(events)
         self.render_latest_trace()
 
+    def _build_linked_context_tab(self) -> QWidget:
+        """Build a read-only view of Mind Map objects active for this chat."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        self.linked_context_title = QLabel("Linked Mind Map Context")
+        self.linked_context_title.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.linked_context_meta = QLabel("Direct graph neighbors are injected into this chat unless their link disables it.")
+        self.linked_context_meta.setWordWrap(True)
+        self.linked_context_meta.setStyleSheet("color: #666; padding: 2px;")
+        self.linked_context_viewer = QTextEdit()
+        self.linked_context_viewer.setReadOnly(True)
+        self.linked_context_viewer.setPlaceholderText("Linked sheets, comments, memories, and graph notes will appear here.")
+        layout.addWidget(self.linked_context_title)
+        layout.addWidget(self.linked_context_meta)
+        layout.addWidget(self.linked_context_viewer, 1)
+        return tab
+
     def render_latest_trace(self) -> None:
         """Switch Compact/Detailed trace text without asking Core to run again."""
         mode = self.trace_mode_selector.currentText().lower() if hasattr(self, "trace_mode_selector") else "compact"
@@ -457,6 +506,11 @@ class RightPanelWidget(QTabWidget):
             self.setCurrentIndex(self.MEMORY_TAB_INDEX)
             return
 
+        if normalized_type == "inner_brain":
+            self._render_chat_data_panel(payload)
+            self.setCurrentIndex(self.CHAT_DATA_TAB_INDEX)
+            return
+
         if normalized_type == "sheets":
             self._render_sheets_panel(payload)
             self.setCurrentIndex(self.SHEETS_TAB_INDEX)
@@ -470,6 +524,11 @@ class RightPanelWidget(QTabWidget):
         if normalized_type == "comments":
             self._render_comments_panel(payload)
             self.setCurrentIndex(self.COMMENTS_TAB_INDEX)
+            return
+
+        if normalized_type == "mindmap_links":
+            self._render_linked_context_panel(payload)
+            self.setCurrentIndex(self.LINKED_CONTEXT_TAB_INDEX)
             return
 
         self.setCurrentIndex(self.PROCESS_TAB_INDEX)
@@ -619,14 +678,52 @@ class RightPanelWidget(QTabWidget):
         global_count = metadata.get("global_count", 0)
         chat_count = metadata.get("chat_count", 0)
 
-        self.state.set_chat_context(chat_context_text)
+        include_chat_context = bool(metadata.get("include_chat_context", True))
+        if include_chat_context:
+            self.state.set_chat_context(chat_context_text)
         self.memory_panel_title.setText(payload.title)
         self.memory_panel_meta.setText(f"Scope: {scope} • Global: {global_count} • Chat: {chat_count}")
-        combined_content = chat_context_text
-        if payload.content.strip():
-            combined_content += "\n\n---\n\n" + payload.content
-        self.memory_panel.setPlainText(combined_content)
+        display_sections = ([chat_context_text] if include_chat_context else []) + [payload.content]
+        self.memory_panel.setPlainText("\n\n---\n\n".join(section for section in display_sections if section.strip()))
         self.memory_panel.moveCursor(QTextCursor.MoveOperation.Start)
+
+    def render_chat_data_payload(self, raw_payload: object, switch_to_tab: bool = False) -> None:
+        """Refresh generated chat metadata without changing any analysis state locally."""
+        payload = SidePanelPayload.from_raw(raw_payload)
+        if payload is None:
+            return
+        self.state.set_payload(payload)
+        self._render_chat_data_panel(payload)
+        if switch_to_tab:
+            self.setCurrentIndex(self.CHAT_DATA_TAB_INDEX)
+
+    def _render_chat_data_panel(self, payload: SidePanelPayload) -> None:
+        """Display all five stored layers plus display-only inferred write candidates."""
+        metadata = payload.metadata
+        bullets = metadata.get("short_bullets") if isinstance(metadata.get("short_bullets"), list) else []
+        suggested = metadata.get("suggested_write_actions") if isinstance(metadata.get("suggested_write_actions"), list) else []
+        export_id = str(metadata.get("export_id") or "")
+        bullet_lines = [f"- {bullet}" for bullet in bullets] or ["- No generated summary yet."]
+        lines = [
+            f"Title: {metadata.get('title') or '<blank>'}",
+            f"Description: {metadata.get('description') or '<blank>'}",
+            "",
+            "Short summary:",
+            *bullet_lines,
+            "",
+            "Detailed summary:",
+            str(metadata.get("detailed_summary") or "No generated summary yet."),
+            "",
+            f"Export reference: {export_id or 'No export created.'}",
+        ]
+        if suggested:
+            lines.extend(("", "Suggested write actions (not executed):", *(f"- {item}" for item in suggested)))
+        self.chat_data_title.setText(payload.title or "Chat Data")
+        generated_at = str(metadata.get("generated_at") or "not generated")
+        self.chat_data_meta.setText(f"Model: {metadata.get('model') or 'nemotron-3-nano:4b'} | Generated: {generated_at}")
+        self.chat_data_export_button.setText("Refresh Export" if export_id else "Create Export")
+        self.chat_data_viewer.setPlainText("\n".join(lines))
+        self.chat_data_viewer.moveCursor(QTextCursor.MoveOperation.Start)
 
     def _render_sheets_panel(self, payload: SidePanelPayload) -> None:
         """Load sheet metadata/content into the editable Sheets tab."""
@@ -870,6 +967,12 @@ class RightPanelWidget(QTabWidget):
             self.comments_selector.addItem(label, comment_id)
         self._load_selected_comment(self.comments_selector.currentIndex())
 
+    def focus_comment(self, comment_id: str) -> None:
+        """Select one already-rendered comment by stable id."""
+        index = self.comments_selector.findData(comment_id)
+        if index >= 0:
+            self.comments_selector.setCurrentIndex(index)
+
     def _load_selected_comment(self, index: int) -> None:
         """Show readable content and target details for the selected comment."""
         comment_id = self.comments_selector.itemData(index)
@@ -911,6 +1014,30 @@ class RightPanelWidget(QTabWidget):
         if isinstance(message_number, int):
             self.comment_jump_requested.emit(message_number)
 
+    def render_linked_context_payload(self, raw_payload: object, switch_to_tab: bool = False) -> None:
+        """Refresh the active chat's direct Mind Map neighborhood."""
+        payload = SidePanelPayload.from_raw(raw_payload)
+        if payload is None:
+            return
+        previous_active_tab = self.state.active_tab
+        self.state.set_payload(payload)
+        if not switch_to_tab:
+            self.state.active_tab = previous_active_tab
+        self._render_linked_context_panel(payload)
+        if switch_to_tab:
+            self.setCurrentIndex(self.LINKED_CONTEXT_TAB_INDEX)
+
+    def _render_linked_context_panel(self, payload: SidePanelPayload) -> None:
+        rows = payload.metadata.get("rows") if isinstance(payload.metadata.get("rows"), list) else []
+        active_count = sum(1 for row in rows if isinstance(row, dict) and row.get("inject_into_chat", True))
+        self.linked_context_title.setText(payload.title or "Linked Mind Map Context")
+        self.linked_context_meta.setText(
+            f"Linked objects: {len(rows)} · automatically injected: {active_count}. "
+            "Edit a relationship in Mind Map to disable injection."
+        )
+        self.linked_context_viewer.setPlainText(payload.content)
+        self.linked_context_viewer.moveCursor(QTextCursor.MoveOperation.Start)
+
     def render_chat_context(self, chat_context_text: str) -> None:
         """Show current chat title/description in the Memory tab by default."""
         self.state.set_chat_context(chat_context_text)
@@ -933,6 +1060,9 @@ class RightPanelWidget(QTabWidget):
         self._comment_rows_by_id = {}
         self.comments_selector.clear()
         self.comments_viewer.clear()
+        self.linked_context_viewer.clear()
+        self.chat_data_viewer.clear()
+        self.linked_context_meta.setText("Direct graph neighbors are injected into this chat unless their link disables it.")
         self.render_chat_context(chat_context_text)
         self.setCurrentIndex(self.PROCESS_TAB_INDEX)
 

@@ -15,6 +15,7 @@ from uuid import uuid4
 from amadeus_trace import BrainRole, ProcessEventEmitter, ProcessEventStatus, ProcessEventType
 from mindmap.models import (
     DEFAULT_GRAPH_ID,
+    GraphContextPackage,
     GraphLink,
     GraphNeighborhood,
     GraphNode,
@@ -85,6 +86,12 @@ class MindMapService:
     def get_link(self, link_id: str) -> GraphLink | None:
         link = self.repository.get_link(link_id)
         return link if link is not None and link.graph_id == self.graph_id else None
+
+    def find_source_node(self, source_type: str, source_id: str) -> GraphNode | None:
+        """Return one source-backed node without exposing repository internals."""
+        clean_type = self._clean_required(source_type, "source_type").lower()
+        clean_id = self._clean_required(source_id, "source_id")
+        return self.repository.find_node_by_source(self.graph_id, clean_type, clean_id)
 
     def create_node(
         self,
@@ -418,6 +425,65 @@ class MindMapService:
             nodes=tuple(sorted(nodes, key=lambda node: (node.title.lower(), node.node_id))),
             links=tuple(sorted(collected_links.values(), key=lambda link: link.link_id)),
         )
+
+    def build_context_package(
+        self,
+        query: str = "",
+        *,
+        limit: int = 8,
+        depth: int = 1,
+        max_nodes: int = 28,
+    ) -> GraphContextPackage:
+        """Build bounded node-and-link context for chat or reasoning consumers.
+
+        Seed selection uses the normal public search/recent-node APIs. The graph
+        is then expanded through direct relationships so an LLM sees why nodes
+        are connected instead of receiving isolated database rows.
+        """
+        if not 1 <= limit <= 25:
+            raise ValueError("limit must be between 1 and 25")
+        if not 0 <= depth <= 3:
+            raise ValueError("depth must be between 0 and 3")
+        if not limit <= max_nodes <= 80:
+            raise ValueError("max_nodes must be between limit and 80")
+
+        clean_query = query.strip()
+        seeds = (
+            self.search_nodes(clean_query, limit=limit)
+            if clean_query
+            else self.list_recent_nodes(limit)
+        )
+        if not seeds:
+            return GraphContextPackage(clean_query, (), (), (), depth)
+
+        nodes_by_id: dict[str, GraphNode] = {}
+        links_by_id: dict[str, GraphLink] = {}
+        for seed in seeds:
+            if len(nodes_by_id) >= max_nodes:
+                break
+            neighborhood = self.get_neighborhood(seed.node_id, depth=depth)
+            for node in neighborhood.nodes:
+                if len(nodes_by_id) >= max_nodes and node.node_id not in nodes_by_id:
+                    continue
+                nodes_by_id[node.node_id] = node
+            for link in neighborhood.links:
+                if link.source_node_id in nodes_by_id and link.target_node_id in nodes_by_id:
+                    links_by_id[link.link_id] = link
+
+        seed_ids = tuple(seed.node_id for seed in seeds if seed.node_id in nodes_by_id)
+        ordered_nodes = tuple(
+            sorted(
+                nodes_by_id.values(),
+                key=lambda node: (
+                    0 if node.node_id in seed_ids else 1,
+                    -node.importance,
+                    node.title.lower(),
+                    node.node_id,
+                ),
+            )
+        )
+        ordered_links = tuple(sorted(links_by_id.values(), key=lambda link: link.link_id))
+        return GraphContextPackage(clean_query, seed_ids, ordered_nodes, ordered_links, depth)
 
     def upsert_source_node(
         self,

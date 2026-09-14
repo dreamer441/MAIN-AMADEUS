@@ -1,19 +1,40 @@
 """Practical keyboard tests for the annotation suggestion input."""
 
 import os
+import tempfile
+import time
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QThread, Qt
+from PyQt6.QtCore import QEvent, QThread, Qt
 from PyQt6.QtTest import QSignalSpy, QTest
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from amadeus_gui.main.main_window import AmadeusMainWindow, ChatResponseWorker, MessageInput
 from amadeus_gui.side import RightPanelWidget
+from habit_tracker import HabitTrackerService
 from mindmap.models import GraphSnapshot
+from side_panel import SidePanelPayload
+
+
+def close_test_window(window) -> None:
+    """Drain initial graph work before releasing the window's Qt objects."""
+    deadline = time.monotonic() + 2
+    while window.mind_map_view.has_active_workers() and time.monotonic() < deadline:
+        QApplication.processEvents()
+        QTest.qWait(10)
+    if window.mind_map_view.has_active_workers():
+        raise AssertionError("Mind Map worker did not finish during GUI cleanup")
+    window.close()
+    window.mind_map_view.deleteLater()
+    window.canvas_view.deleteLater()
+    window.habit_tracker_view.deleteLater()
+    window.deleteLater()
+    QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 class MessageInputSuggestionKeyTests(unittest.TestCase):
@@ -139,6 +160,8 @@ class ProcessMonitorLiveEventTests(unittest.TestCase):
                 return {"response": "ok", "trace_events": final_events}
 
         window = AmadeusMainWindow(Core())
+        self.addCleanup(window.core.cleanup)
+        self.addCleanup(close_test_window, window)
         worker = ChatResponseWorker(window.core, "hello")
         thread = QThread()
         worker.moveToThread(thread)
@@ -209,6 +232,42 @@ class MaterialsPanelTests(unittest.TestCase):
         self.assertTrue(panel.material_open_button.isEnabled())
         self.assertTrue(panel.material_use_button.isEnabled())
         self.assertEqual("13 July 2026\nMessages 4-18", panel.materials_details.text())
+
+
+class ChatDataPanelTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.application = QApplication.instance() or QApplication([])
+
+    def test_chat_data_displays_layers_and_emits_explicit_actions(self) -> None:
+        panel = RightPanelWidget("Ready")
+        refreshes = []
+        exports = []
+        panel.chat_data_refresh_requested.connect(lambda: refreshes.append(True))
+        panel.chat_data_export_requested.connect(lambda: exports.append(True))
+        panel.render_chat_data_payload({"type": "inner_brain", "metadata": {
+            "title": "Title", "description": "Description", "short_bullets": ["bullet"],
+            "detailed_summary": "evidence", "export_id": "", "model": "fake",
+            "suggested_write_actions": ["memory"],
+        }}, switch_to_tab=True)
+
+        self.assertEqual(panel.CHAT_DATA_TAB_INDEX, panel.currentIndex())
+        self.assertIn("Suggested write actions (not executed)", panel.chat_data_viewer.toPlainText())
+        self.assertEqual("Create Export", panel.chat_data_export_button.text())
+        panel.chat_data_refresh_button.click()
+        panel.chat_data_export_button.click()
+        self.assertEqual([True], refreshes)
+        self.assertEqual([True], exports)
+
+    def test_metadata_memory_panel_omits_ordinary_chat_memory(self) -> None:
+        panel = RightPanelWidget("Ready")
+
+        panel._render_memory_panel(
+            SidePanelPayload("memory", "Module Metadata", "exact FEATURES text", {"include_chat_context": False}),
+            "ordinary chat memory",
+        )
+
+        self.assertEqual("exact FEATURES text", panel.memory_panel.toPlainText())
 
 
 class CommentsPanelTests(unittest.TestCase):
@@ -298,6 +357,8 @@ class FakeCommentCore:
     """Small Core substitute that records MainWindow comment delegation."""
 
     def __init__(self) -> None:
+        self._temporary_directory = tempfile.TemporaryDirectory()
+        self.habits = HabitTrackerService(Path(self._temporary_directory.name))
         self.add_calls: list[tuple[str, str]] = []
         self.update_calls: list[tuple[str, str]] = []
         self.delete_calls: list[str] = []
@@ -308,6 +369,10 @@ class FakeCommentCore:
             "comment_type": "selection",
         }]
         self._mind_map_listeners = []
+
+    def cleanup(self) -> None:
+        """Remove the isolated service data owned by this GUI test double."""
+        self._temporary_directory.cleanup()
 
     def list_chats(self) -> list[object]:
         return []
@@ -361,7 +426,8 @@ class MainWindowCommentActionTests(unittest.TestCase):
         self.window = AmadeusMainWindow(self.core)
 
     def tearDown(self) -> None:
-        self.window.close()
+        close_test_window(self.window)
+        self.core.cleanup()
 
     def test_add_comment_without_selection_delegates_an_empty_selection(self) -> None:
         with patch("amadeus_gui.main.main_window.QInputDialog.getMultiLineText", return_value=("General note", True)) as dialog:

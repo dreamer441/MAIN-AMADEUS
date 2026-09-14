@@ -1,36 +1,52 @@
 # Mind Map Future Updates
 
-## Near-term
+## Immediate
 
+- Consider a compact visual treatment for stored chat analysis metadata after node-detail usability is evaluated.
+- Validate the reconstructed interface on Windows at several graph sizes and tune spacing, label density, and panel proportions from real use.
+- Add direct drag-to-connect handles and a lightweight relationship creation overlay.
+- Add a source-sync status indicator for chat/sheet/material nodes.
+- Add optional chat import modes: metadata only, structured summary, or selected message range.
 - Add undo/redo transaction history.
-- Add node grouping, containers, collapse/expand, and multiple graph workspaces.
-- Add richer layout engines while preserving positions locked either manually or by `mindmap_pinned` metadata.
-- Add a background or progressively computed layout engine for graphs above the current 80-node synchronous layout cap.
-- Add link endpoint handles and direct drag-to-connect interaction.
-- Add source-opening adapters so a chat/sheet/material node can jump to its original object.
-- Any future source-opening adapter must be Core-mediated and permission-guarded; the Mind Map GUI must not read, edit, or open source paths directly.
-- Keep source metadata adapters Core-mediated; source modules must use `upsert_mind_map_source_node` rather than SQLite.
-- Add controlled Chat Registry synchronization after Chat Registry V2 stabilizes.
-- Add comments on nodes and links through the Comments Module.
-- Add broader batch graph creation and relationship operations for large Creation Module updates.
-- Add database migrations and backup/restore controls in the GUI.
+- Add archive/restore support before expanding destructive graph/source operations.
+- Add projection visibility and filtering controls for Canvas-backed nodes and links after the automatic Canvas source projection is validated.
+- Add read-only `Mind Map` Canvas projection visibility, freshness status, and filtering without introducing Canvas-side source editing or deletion.
 
-## Retrieval and intelligence
+## Graph Curator intelligence
 
-- Three-layer retrieval: local, deep traversal, and cluster retrieval.
-- Semantic search and duplicate-node detection.
-- Evidence inspection and contradiction detection.
-- Relevance scoring, link activation counts, reward/punishment updates, and importance propagation.
-- Temporary inference links with expiry and decay.
-- Cluster creation and topic-level summaries.
-- Knowledge-gap detection.
-- Creation Module proposals with confirmation and visible process events.
+- Add a specialized Graph Curator submodule with its own prompt and model routing.
+- Convert chats into structured summaries, decisions, tasks, requirements, risks, questions, and evidence-backed relationships.
+- Use a proposal layer between LLM output and graph mutations.
+- Allow safe metadata/tag proposals automatically; require review for merges, major links, importance changes, and destructive operations.
+- Invoke the curator manually first, then through Creation Mode, Drift Mode, and controlled Chat-model requests.
+
+## Retrieval and organization
+
+- Add semantic search while preserving explicit source and relationship evidence.
+- Add local, deep, and cluster retrieval modes.
+- Add duplicate detection, contradiction proposals, cluster summaries, and knowledge-gap detection.
+- Add relevance activation, reward/punishment updates, temporary-link decay, and importance propagation only after their real update logic is implemented.
+- Add collapsible containers, multiple graph workspaces, cluster views, and background layout for large graphs.
 
 ## Guardrails
 
-- Do not let LLM output write directly to SQLite.
-- Do not automatically delete nodes based only on a low score.
-- Do not treat stored reward/decay fields as implemented intelligence until their real update logic exists.
-- Keep Inner Brain reasoning separate from graph storage and visualization.
-- Preserve atomic import semantics: future bulk importers must validate their source schema before entering the repository transaction and must not publish graph data in invalidation notifications.
-- Keep long-running graph I/O in Qt workers; scene and widget updates must remain on the GUI thread.
+- LLM output must never write directly to SQLite.
+- Do not automatically delete nodes or evidence based only on scores.
+- Keep visual physics transient and service storage authoritative.
+- Keep source navigation in MainWindow or owning adapters, never inside storage or graph item classes.
+- Keep Inner Brain reasoning, Graph Curator proposals, and deterministic graph storage as separate responsibilities.
+
+## Workspace synchronization follow-ups
+
+- Add a real Materials creation/import API before making `material` nodes workspace-backed.
+- Add configurable synchronization policy for global sheets and global memory across multiple chat nodes.
+- Add a per-delete choice between delete source, detach graph node, archive source, and cancel; current Mind Map deletion defaults to deleting the represented source object.
+- Define optional cascade policy for deleting a Chat node and its separately stored Sheets, Comments, Memories, Materials, and derived graph nodes.
+- Add exact source selection for Memory nodes and richer Comment targeting from Mind Map.
+- Add optional retroactive import of existing chat sheets, comments, memory, materials, and selected message ranges.
+- Add context-budget prioritization when many direct nodes are linked to one chat.
+- Add multi-hop context policies separately from default direct-neighbor injection.
+
+## Core ownership cleanup — 2026-09-12
+
+- Extend workspace source synchronization through workspace_integration public APIs rather than importing other module internals into Mind Map.

@@ -35,3 +35,4 @@ class AnnotationContext:
     mind_map_module: MindMapModule
     annotation_parser: AnnotationParser
     current_chat_id_provider: Callable[[], str]
+    memory_saved_callback: Callable[[object], object] | None = None

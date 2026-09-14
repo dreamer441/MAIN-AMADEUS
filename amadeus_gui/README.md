@@ -20,7 +20,8 @@ other non-normal-chat paths continue to update from their final payloads.
 
 ## Package Boundaries
 
-- `amadeus_gui.main` owns the main chat window and whole-window coordination.
+- `amadeus_gui.main` owns the permanent Flow Chat window and cross-window coordination.
+- `amadeus_gui.module_window_manager` owns reusable top-level window lifecycle for major modules.
 - `amadeus_gui.side` owns the tabbed right-side workspace rendering.
 - The GUI continues to call Core public methods only; it does not read or write module storage directly.
 
@@ -32,13 +33,14 @@ The right side of the window is now a tabbed work panel. Process Monitor shows r
 
 The right panel now includes a Memory tab. `[memory][list]` and save actions update this tab so saved context can be inspected without filling the main chat transcript.
 
-## Flow Navigation Shell
+## Flow Home and Independent Module Windows
 
-The persistent sidebar opens on Flow Chat and retains its pages while navigating. Flow Chat is a separate, Core-mediated conversation with its own transcript, input, and event-only Process Monitor. The existing dedicated Chats page keeps its chat-management controls and full right-side workspace.
+Flow Chat remains permanently mounted in the primary AMADEUS window with its own transcript, input, and event-only Process Monitor. The sidebar no longer replaces Flow with stacked pages. Instead, Chats, Code, Mind Map, Canvas, and Habit Tracker open as independent top-level windows, allowing several workspaces to stay visible in parallel.
 
-Code, Mind Map, and Habit Tracker are intentionally visible foundation-pending pages, not implemented module workflows. The Chats page provides New Chat and Edit Chat dialogs for title, description, priority, purpose, and descriptive V1 scope. Flow receives history and live shared process events through Core; the GUI does not access Flow or dedicated-chat storage directly.
+`ModuleWindowManager` creates at most one window for each module, raises/focuses it when reopened, and preserves the exact existing view instance while the window is closed or hidden. This prevents duplicate Canvas, Mind Map, or Chats state. Closing one module leaves Flow and all other modules running; closing Flow coordinates final application shutdown.
 
+The Chats window retains New Chat and Edit Chat dialogs for title, description, priority, purpose, and descriptive V1 scope. Flow and every module window continue to use the same Core instance; the GUI never reads module storage directly.
 
-## Canvas page
+## Canvas window
 
-The main navigation now mounts a persistent `CanvasView` supplied by `canvas_module.gui`. The current page is a real zoomable and pannable infinite-style workspace, but it intentionally has no typed objects or AMADEUS request controls yet. This keeps the visible foundation testable without presenting future Canvas behavior as complete.
+The Canvas launcher opens the persistent `CanvasView` supplied by `canvas_module.gui` in its own top-level window. It supports multiple lightweight project workspaces plus typed movable blocks, semantic lines/arrows, root and target-focused context controls, an optional instruction field, and `Send Changes to AMADEUS`. Requests run on a background worker through Core; successful responses appear as movable AMADEUS blocks with saved source arrows, while failed or stale requests leave the Canvas unchanged.

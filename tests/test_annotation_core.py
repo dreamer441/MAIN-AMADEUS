@@ -11,7 +11,10 @@ from amadeus_trace import TraceLogger
 from annotation_module.callable_context_router import CallableContextRouter
 from annotation_module.annotation_parser import AnnotationParser
 from context_builder.chat_context_builder import ChatContextBuilder
+from chat_workspace.conversation import ChatConversation
 from llm_client import OllamaClientError
+from response_modes import ResponseMode
+from response_modes.response_payload import ResponsePresenter
 
 
 class _FakeRegistry:
@@ -32,23 +35,64 @@ class _FakeChat:
         return "chat response"
 
 
+class _FakeExchanges:
+    """Record owner-level persistence calls while preserving trace behavior."""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.persisted: list[tuple[str, str]] = []
+        self.fail = fail
+
+    def persist_completed_exchange(self, message, response, trace_logger, response_decision=None):
+        if self.fail:
+            raise RuntimeError("private storage failure")
+        self.persisted.append((message, response))
+        trace_logger.add_event("module", "Completed Exchange Stored", "Stored the completed exchange in the active chat.", level="success")
+
+
+def _conversation(*, chat=None, context_builder=None, exchanges=None, callable_context_router=None) -> ChatConversation:
+    """Build the request owner directly with explicit, named collaborators."""
+    history = SimpleNamespace(get_current_chat=lambda: SimpleNamespace(response_mode=ResponseMode.NORMAL))
+    return ChatConversation(
+        annotation_parser=AnnotationParser(),
+        annotation_registry=_FakeRegistry(),
+        annotation_context=object(),
+        callable_context_router=callable_context_router or SimpleNamespace(),
+        context_builder=context_builder or SimpleNamespace(build_for_message=lambda *_args, **_kwargs: SimpleNamespace(
+            recent_conversation=None, project_context=None, memory_context=None,
+            chat_workspace_context=None, project_context_active=False,
+        )),
+        identity_prompt_builder=SimpleNamespace(build_for_chat=lambda **_kwargs: "identity"),
+        chat_module_provider=lambda: chat,
+        advisor=SimpleNamespace(
+            analyze_plain_message=lambda _message: SimpleNamespace(metadata_mode=None, suggested_write_actions=()),
+            resolve_inferred_metadata=lambda _analysis: None,
+            resolve_inferred_read_context=lambda _analysis: None,
+            combine_callable_context=lambda first, second: first or second,
+        ),
+        creation_requests=SimpleNamespace(
+            looks_like_creation_command=lambda _message: False,
+            pending_action_from_inference=lambda *_args, **_kwargs: None,
+        ),
+        exchanges=exchanges or _FakeExchanges(),
+        responses=ResponsePresenter(),
+        metadata=SimpleNamespace(),
+        chat_history_store=history,
+        global_response_mode=ResponseMode.NORMAL,
+    )
+
+
 class ActiveChatLifecycleTests(unittest.TestCase):
     """Verify normal chat reports only genuine, safe lifecycle boundaries."""
 
-    def _core(self) -> AmadeusCore:
-        core = object.__new__(AmadeusCore)
-        core.annotation_parser = AnnotationParser()
-        core.module_registry = SimpleNamespace(get=lambda name: _FakeChat() if name == "chat" else None)
+    def _core(self) -> ChatConversation:
+        chat = _FakeChat()
         chat_history = SimpleNamespace(
             get_current_chat_id=lambda: "chat-1",
             load_messages=lambda limit: [],
             get_chat=lambda _chat_id: None,
         )
         file_reader = SimpleNamespace(build_project_overview=lambda: "secret prompt")
-        core.context_builder = ChatContextBuilder(chat_history, file_reader)
-        core.identity_prompt_builder = SimpleNamespace(build_for_chat=lambda **_kwargs: "identity")
-        core._persist_exchange = lambda _message, _response: None
-        return core
+        return _conversation(chat=chat, context_builder=ChatContextBuilder(chat_history, file_reader))
 
     def test_normal_chat_emits_safe_lifecycle_events(self) -> None:
         result = self._core().handle_user_message("Explain the project")
@@ -62,6 +106,7 @@ class ActiveChatLifecycleTests(unittest.TestCase):
                 "Context Building",
                 "Project Overview Selected",
                 "Context Ready",
+                "Response Mode Resolved",
                 "Preparing Answer Through Configured LLM",
                 "Response Composed",
                 "Completed Exchange Stored",
@@ -88,17 +133,17 @@ class ActiveChatLifecycleTests(unittest.TestCase):
             (),
             {"generate": lambda *_args, **_kwargs: (_ for _ in ()).throw(OllamaClientError(error_text))},
         )()
-        core.module_registry = SimpleNamespace(get=lambda name: AmadeusChatModule(failing_client) if name == "chat" else None)
+        core.chat_module_provider = lambda: AmadeusChatModule(failing_client)
 
         result = core.handle_user_message("hello")
 
         events = result["trace_events"]
         self.assertEqual(
-            ["Request Received", "Request Route", "Normal Chat Work Plan", "Context Building", "Context Ready", "Preparing Answer Through Configured LLM", "Configured LLM Unavailable", "Completed Exchange Stored", "Request Failed"],
+            ["Request Received", "Request Route", "Normal Chat Work Plan", "Context Building", "Context Ready", "Response Mode Resolved", "Preparing Answer Through Configured LLM", "Configured LLM Unavailable", "Completed Exchange Stored", "Request Failed"],
             [event["title"] for event in events],
         )
         self.assertEqual(
-            ["running", "running", "running", "running", "completed", "running", "failed", "completed", "failed"],
+            ["running", "running", "running", "running", "completed", "running", "running", "failed", "completed", "failed"],
             [event["status"] for event in events],
         )
         self.assertEqual("AMADEUS LLM error: sensitive backend failure", result["response"])
@@ -106,7 +151,7 @@ class ActiveChatLifecycleTests(unittest.TestCase):
 
     def test_missing_chat_emits_terminal_failed_lifecycle(self) -> None:
         core = self._core()
-        core.module_registry = SimpleNamespace(get=lambda _name: None)
+        core.chat_module_provider = lambda: None
 
         result = core.handle_user_message("hello")
 
@@ -131,24 +176,17 @@ class ActiveChatLifecycleTests(unittest.TestCase):
 class AnnotationBlockCoreTests(unittest.TestCase):
     """Verify Core consumes parser output without interpreting block delimiters."""
 
-    def _core(self) -> tuple[AmadeusCore, _FakeChat, list[tuple[str, str]]]:
-        core = object.__new__(AmadeusCore)
+    def _core(self) -> tuple[ChatConversation, _FakeChat, list[tuple[str, str]]]:
         chat = _FakeChat()
-        persisted: list[tuple[str, str]] = []
-        core.annotation_registry = _FakeRegistry()
-        core.annotation_context = object()
-        core.module_registry = SimpleNamespace(get=lambda name: chat if name == "chat" else None)
-        core.context_builder = SimpleNamespace(build_for_message=lambda prompt, **_kwargs: SimpleNamespace(
+        exchanges = _FakeExchanges()
+        core = _conversation(chat=chat, exchanges=exchanges, context_builder=SimpleNamespace(build_for_message=lambda prompt, **_kwargs: SimpleNamespace(
             recent_conversation="history",
             project_context=None,
             memory_context=None,
             chat_workspace_context=None,
             project_context_active=False,
-        ))
-        core.identity_prompt_builder = SimpleNamespace(build_for_chat=lambda **kwargs: "identity")
-        core._persist_exchange = lambda message, response: persisted.append((message, response))
-        core._build_response_payload = lambda response, trace, side_panel=None: {"response": response, "side_panel": side_panel}
-        return core, chat, persisted
+        )))
+        return core, chat, exchanges.persisted
 
     def test_only_outside_block_text_is_sent_to_chat(self) -> None:
         core, chat, persisted = self._core()
@@ -183,8 +221,6 @@ class AnnotationBlockCoreTests(unittest.TestCase):
     def test_block_only_save_event_precedes_successful_terminal_event(self) -> None:
         core, _chat, _persisted = self._core()
         core.annotation_parser = AnnotationParser()
-        core._build_response_payload = AmadeusCore._build_response_payload.__get__(core, AmadeusCore)
-
         result = core.handle_user_message("[identity][end]")
 
         self.assertEqual(
@@ -196,8 +232,7 @@ class AnnotationBlockCoreTests(unittest.TestCase):
     def test_block_only_save_failure_has_no_storage_event_and_fails_terminally(self) -> None:
         core, _chat, _persisted = self._core()
         core.annotation_parser = AnnotationParser()
-        core._build_response_payload = AmadeusCore._build_response_payload.__get__(core, AmadeusCore)
-        core._persist_exchange = lambda _message, _response: (_ for _ in ()).throw(RuntimeError("private storage failure"))
+        core.exchanges = _FakeExchanges(fail=True)
 
         result = core.handle_user_message("[identity][end]")
 
@@ -211,9 +246,7 @@ class AnnotationBlockCoreTests(unittest.TestCase):
 class CallableContextMonitorTests(unittest.TestCase):
     """Verify callable sheet/export routes report only completed persistence."""
 
-    def _core(self, *, fail_save: bool = False) -> AmadeusCore:
-        core = object.__new__(AmadeusCore)
-        core.annotation_parser = AnnotationParser()
+    def _core(self, *, fail_save: bool = False) -> ChatConversation:
         context_bundle = SimpleNamespace(
             recent_conversation=None,
             project_context=None,
@@ -223,10 +256,11 @@ class CallableContextMonitorTests(unittest.TestCase):
         )
         sheet = SimpleNamespace(title="Quarterly plan", scope="chat", sheet_id="sheet-1")
         selection = SimpleNamespace(record=SimpleNamespace(chat_title="Private Archived Chat"), range_label="1-2")
+        core = _conversation(chat=_FakeChat(), exchanges=_FakeExchanges(fail=fail_save))
         core.callable_context_router = CallableContextRouter(
             current_chat_id_provider=lambda: "chat-1",
             sheet_service=SimpleNamespace(
-                resolve_annotation_target=lambda *_args: (sheet, None, "chat"),
+                resolve_target=lambda *_args, **_kwargs: (sheet, None, "chat"),
                 build_prompt_context=lambda _sheet: "sheet context",
                 build_panel_payload=lambda **_kwargs: {"type": "sheets"},
             ),
@@ -240,8 +274,8 @@ class CallableContextMonitorTests(unittest.TestCase):
             context_builder=SimpleNamespace(build_for_message=lambda *_args, **_kwargs: context_bundle),
             identity_prompt_builder=SimpleNamespace(build_for_chat=lambda **_kwargs: "identity"),
             chat_module_provider=lambda: _FakeChat(),
-            persist_exchange=(lambda _message, _response: (_ for _ in ()).throw(RuntimeError("private storage failure"))) if fail_save else (lambda _message, _response: None),
-            build_response=core._build_response_payload,
+            persist_exchange=(lambda _message, _response, _decision=None: (_ for _ in ()).throw(RuntimeError("private storage failure"))) if fail_save else (lambda _message, _response, _decision=None: None),
+            build_response=core.responses.build_response_payload,
         )
         return core
 
@@ -286,7 +320,7 @@ class CallableContextMonitorTests(unittest.TestCase):
         self.assertNotIn("private prompt", trace)
 
         core = self._core()
-        core.callable_context_router._sheet_service.resolve_annotation_target = lambda *_args: (None, raw_error, "chat")
+        core.callable_context_router._sheet_service.resolve_target = lambda *_args, **_kwargs: (None, raw_error, "chat")
 
         result = core.handle_user_message("[sheet][chat][Private Lookup Target] private prompt")
 

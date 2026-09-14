@@ -27,3 +27,10 @@ class ModuleRegistry:
     def list_modules(self) -> list[str]:
         """Return registered module names in predictable order."""
         return sorted(self._modules)
+
+    def require(self, name: str):
+        """Resolve an explicit route or fail clearly when startup wiring is missing."""
+        module = self.get(name)
+        if module is None:
+            raise LookupError(f"AMADEUS module is not registered: {name}")
+        return module

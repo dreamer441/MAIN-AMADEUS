@@ -12,3 +12,7 @@
 - [ ] Add clear/paste buttons for the context box.
 - [ ] Save Side Ask result directly into a selected sheet.
 - [ ] Create branch links between original chat and Side Ask-created chats.
+
+## Core ownership cleanup — 2026-09-12
+
+- Ownership direction: Keep secondary conversations ephemeral until a specific save action is requested.

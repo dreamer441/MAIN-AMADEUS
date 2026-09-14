@@ -6,7 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from mindmap.models import GraphLink, GraphNeighborhood, GraphNode, GraphSnapshot, SourceReference
+from mindmap.models import GraphContextPackage, GraphLink, GraphNeighborhood, GraphNode, GraphSnapshot, SourceReference
 from mindmap.repository import SQLiteMindMapRepository
 from mindmap.service import GraphListener, MindMapService
 
@@ -44,6 +44,9 @@ class MindMapModule:
     def get_link(self, link_id: str) -> GraphLink | None:
         return self.service.get_link(link_id)
 
+    def find_source_node(self, source_type: str, source_id: str) -> GraphNode | None:
+        return self.service.find_source_node(source_type, source_id)
+
     def create_node(self, **fields: Any) -> GraphNode:
         return self.service.create_node(**fields)
 
@@ -73,6 +76,15 @@ class MindMapModule:
 
     def get_neighborhood(self, root_node_id: str, depth: int = 1) -> GraphNeighborhood:
         return self.service.get_neighborhood(root_node_id, depth=depth)
+
+
+    def build_context_package(
+        self, query: str = "", *, limit: int = 8, depth: int = 1, max_nodes: int = 28
+    ) -> GraphContextPackage:
+        """Return bounded relationship-aware context for chat and reasoning."""
+        return self.service.build_context_package(
+            query, limit=limit, depth=depth, max_nodes=max_nodes
+        )
 
     def upsert_source_node(self, **fields: Any) -> GraphNode:
         return self.service.upsert_source_node(**fields)

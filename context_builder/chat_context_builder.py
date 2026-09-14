@@ -5,6 +5,7 @@ prompt. This prevents Core from growing too much and prevents Chat from reading
 files/storage/memory directly.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from amadeus_trace import TraceLogger
@@ -57,6 +58,7 @@ class ChatContextBuilder:
         chat_history_store: ChatHistoryStore,
         file_reader: ProjectFileReader,
         memory_service: MemoryService | None = None,
+        linked_context_provider: Callable[[str], str | None] | None = None,
         recent_message_limit: int = 18,
         max_history_characters: int = 4_000,
     ) -> None:
@@ -65,6 +67,7 @@ class ChatContextBuilder:
         self.chat_history_store = chat_history_store
         self.file_reader = file_reader
         self.memory_service = memory_service
+        self.linked_context_provider = linked_context_provider
         self.recent_message_limit = recent_message_limit
         self.max_history_characters = max_history_characters
 
@@ -162,6 +165,10 @@ class ChatContextBuilder:
             lines.append(f"Description: {metadata.description.strip()}")
         if metadata.summary.strip():
             lines.append("Callable summary exists, but full staged retrieval is not implemented yet.")
+        if self.linked_context_provider is not None:
+            linked_context = self.linked_context_provider(current_chat_id)
+            if linked_context:
+                lines.extend(["", linked_context])
         return "\n".join(lines)
 
     def _build_memory_context(self, current_chat_id: str) -> str | None:

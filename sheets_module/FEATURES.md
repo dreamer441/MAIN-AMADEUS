@@ -21,3 +21,12 @@
   - `[sheet][global][Sheet Title]` opens one global sheet.
   - `[sheet][scope][Sheet Title] prompt` injects that sheet as callable context for the prompt.
 - Explicitly separates sheet context from always-active memory.
+
+## Mind Map projection
+
+- Sheets created or edited through Core are projected into stable source-backed Mind Map nodes.
+- Chat-scoped sheets receive a relationship to their owning chat and are available as default linked context.
+
+## Core ownership cleanup — 2026-09-12
+
+- resolve_target accepts plain scope and locator values; Sheets no longer imports Annotation parser types. A structural resolve_annotation_target compatibility method preserves existing callers.

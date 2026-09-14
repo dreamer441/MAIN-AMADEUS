@@ -13,6 +13,24 @@ from annotation_module.annotation_parser import ParsedAnnotation
 from annotation_module.annotation_result import AnnotationResult
 
 
+def resolve_sheet_annotation_target(sheet_service, annotation: ParsedAnnotation, chat_id: str):
+    """Interpret bracket syntax here and send plain scope/locator values to Sheets."""
+    arguments = annotation.arguments
+    normalized = annotation.normalized_arguments
+    if not arguments:
+        return sheet_service.resolve_target(chat_id)
+    first = normalized[0] if normalized else ""
+    if first == "list":
+        scope = normalized[1] if len(normalized) > 1 else "all"
+        if scope not in {"all", "chat", "global"}:
+            return None, f"Unknown sheet list scope: `{arguments[1]}`", "all"
+        return sheet_service.resolve_target(chat_id, scope=scope)
+    if first in {"chat", "global"}:
+        reference = arguments[1] if len(arguments) > 1 else None
+        return sheet_service.resolve_target(chat_id, scope=first, reference=reference)
+    return sheet_service.resolve_target(chat_id, reference=arguments[0])
+
+
 class SheetAnnotation:
     """Handles read/list/open commands for `[sheet]`."""
 
@@ -23,7 +41,7 @@ class SheetAnnotation:
         direct handler so the selected sheet can be injected into normal chat.
         """
         chat_id = context.current_chat_id_provider()
-        sheet, problem, scope = context.sheet_service.resolve_annotation_target(annotation, chat_id)
+        sheet, problem, scope = resolve_sheet_annotation_target(context.sheet_service, annotation, chat_id)
         if problem is not None:
             return self._sheet_help(problem)
 
@@ -61,5 +79,6 @@ class SheetAnnotation:
             "* `[sheet][global]` - open global sheets\n"
             "* `[sheet][chat][Sheet Title]` - open one chat sheet\n"
             "* `[sheet][global][Sheet Title] your question` - inject that sheet as callable context\n\n"
-            "Create and edit sheets directly in the right-side Sheets panel."
+            "* `[sheet][create] request` - prepare a new sheet for approval\n\n"
+            "Create requests are approved in the dialog; existing sheets can be edited in the right-side Sheets panel."
         )

@@ -37,6 +37,7 @@ class TraceLogger:
         title: str,
         message: str,
         level: str = "info",
+        metadata: dict[str, object] | None = None,
     ) -> None:
         """Add an event without allowing trace failures to break AMADEUS chat."""
         try:
@@ -53,7 +54,7 @@ class TraceLogger:
                 status=status,
                 title=title,
                 summary=message,
-                metadata={"legacy_category": clean_category},
+                metadata={"legacy_category": clean_category, **(metadata or {})},
             )
         except Exception:
             # Trace is diagnostic only. AMADEUS must still answer if monitoring fails.

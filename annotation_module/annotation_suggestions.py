@@ -86,8 +86,14 @@ class AnnotationSuggestionService:
         if parsed.annotation_name == "memory":
             return [suggestion.as_dict() for suggestion in self._memory_suggestions(parsed)]
 
+        if parsed.annotation_name == "metadata":
+            return [suggestion.as_dict() for suggestion in self._metadata_suggestions(parsed)]
+
         if parsed.annotation_name == "export":
             return [suggestion.as_dict() for suggestion in self._export_suggestions(parsed)]
+
+        if parsed.annotation_name == "mindmap":
+            return [suggestion.as_dict() for suggestion in self._mindmap_suggestions(parsed)]
 
         return []
 
@@ -99,12 +105,68 @@ class AnnotationSuggestionService:
             AnnotationSuggestion("[sheet]", "[sheet]", "Open/edit/inject AMADEUS sheets"),
             AnnotationSuggestion("[export]", "[export]", "Export/open chat references in Materials"),
             AnnotationSuggestion("[memory]", "[memory]", "Save/list explicit AMADEUS memory"),
+            AnnotationSuggestion("[metadata]", "[metadata]", "Read verified module FEATURES and future updates"),
             AnnotationSuggestion("[identity]", "[identity]", "Inspect AMADEUS identity charter/prompt"),
+            AnnotationSuggestion("[mindmap]", "[mindmap]", "Use Mind Map nodes and relationships as context"),
+            AnnotationSuggestion("/create-chat", "/create-chat ", "Create a dedicated chat after approval"),
             AnnotationSuggestion("[end]", "[end]", "Close the current annotation block"),
         ]
         if not query:
             return suggestions
         return [suggestion for suggestion in suggestions if query in suggestion.label.lower()]
+
+    def _metadata_suggestions(self, parsed: ParsedAnnotation) -> list[AnnotationSuggestion]:
+        """Guide fixed metadata selection without accepting arbitrary filenames."""
+        kinds = ("features", "future", "both")
+        if not parsed.arguments:
+            return [
+                AnnotationSuggestion("[metadata][all]", "[metadata][all]", "Read all verified modules"),
+                AnnotationSuggestion("[metadata][module]", "[metadata][module]", "Choose one verified module"),
+            ]
+
+        first = self.parser.normalize_token(parsed.arguments[0])
+        if first == "all" and len(parsed.arguments) == 1:
+            return [
+                AnnotationSuggestion(f"[{kind}]", f"[metadata][all][{kind}]", "Metadata document selection")
+                for kind in kinds
+            ]
+
+        if first != "module":
+            return []
+        if len(parsed.arguments) == 1:
+            return [
+                AnnotationSuggestion(f"[{module}]", f"[metadata][module][{module}]", "Verified module")
+                for module in self.file_reader.list_module_names()
+            ]
+
+        if len(parsed.arguments) == 2 and parsed.arguments[1] in self.file_reader.list_module_names():
+            module = parsed.arguments[1]
+            return [
+                AnnotationSuggestion(
+                    f"[{kind}]",
+                    f"[metadata][module][{module}][{kind}]",
+                    "Metadata document selection",
+                )
+                for kind in kinds
+            ]
+        return []
+
+    def _mindmap_suggestions(self, parsed: ParsedAnnotation) -> list[AnnotationSuggestion]:
+        """Expose the two supported bounded Mind Map retrieval forms."""
+        if parsed.arguments:
+            return []
+        return [
+            AnnotationSuggestion(
+                "[mindmap]",
+                "[mindmap] ",
+                "Use a bounded set of recent Mind Map nodes for one request",
+            ),
+            AnnotationSuggestion(
+                "[mindmap][search text]",
+                "[mindmap][] ",
+                "Search nodes and include their explicit direct relationships",
+            ),
+        ]
 
     def _identity_suggestions(self) -> list[AnnotationSuggestion]:
         """Identity has a small fixed set of read-only views."""
@@ -119,6 +181,7 @@ class AnnotationSuggestionService:
         """Show the guided path for the `[memory]` annotation."""
         if not parsed.arguments:
             return [
+                AnnotationSuggestion("[memory][save]", "[memory][save] ", "Save memory after approval"),
                 AnnotationSuggestion("[memory][global]", "[memory][global]", "Save cross-chat memory"),
                 AnnotationSuggestion("[memory][chat]", "[memory][chat]", "Save memory for this chat only"),
                 AnnotationSuggestion("[memory][list]", "[memory][list]", "Open Memory panel"),
@@ -156,11 +219,13 @@ class AnnotationSuggestionService:
             AnnotationSuggestion("[sheet][global]", "[sheet][global]", "Open global sheets"),
         ]
         if self.sheet_service is None or self.current_chat_id_provider is None:
-            return base_commands if not parsed.arguments else []
+            return [AnnotationSuggestion("[sheet][create]", "[sheet][create] ", "Create a sheet after approval")] + base_commands if not parsed.arguments else []
 
         chat_id = self.current_chat_id_provider()
         if not parsed.arguments:
-            return base_commands + self._sheet_name_suggestions(chat_id=chat_id, scope="all")
+            return [
+                AnnotationSuggestion("[sheet][create]", "[sheet][create] ", "Create a sheet after approval"),
+            ] + base_commands + self._sheet_name_suggestions(chat_id=chat_id, scope="all")
 
         first = self.parser.normalize_token(parsed.arguments[0])
         if first == "list" and len(parsed.arguments) == 1:

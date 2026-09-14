@@ -12,6 +12,8 @@ from typing import Any
 
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_OLLAMA_MODEL = "llama3.2:latest"
+DEFAULT_OLLAMA_CONTEXT_TOKENS = 8192
+CONTEXT_SAFETY_MARGIN_TOKENS = 128
 
 
 class OllamaClientError(RuntimeError):
@@ -26,13 +28,15 @@ class OllamaClient:
         model: str = DEFAULT_OLLAMA_MODEL,
         host: str = DEFAULT_OLLAMA_HOST,
         timeout_seconds: int = 600,
+        think: bool | None = None,
     ) -> None:
         # Keep Ollama settings centralized so future model selection is easy to add.
         self.model = model
         self.host = host.rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self.think = think
 
-    def generate(self, prompt: str, system_prompt: str | None = None) -> str:
+    def generate(self, prompt: str, system_prompt: str | None = None, num_predict: int | None = None) -> str:
         """Send a prompt to Ollama and return the generated response text."""
         payload: dict[str, Any] = {
             "model": self.model,
@@ -40,12 +44,22 @@ class OllamaClient:
             "stream": False,
             "options": {
                 "temperature": 0.7,
-                "num_ctx": 8192,
+                "num_ctx": DEFAULT_OLLAMA_CONTEXT_TOKENS,
             },
         }
+        if num_predict is not None:
+            # Response policy owns the requested budget; Ollama enforces it at generation time.
+            payload["options"]["num_predict"] = self._clamp_num_predict(
+                num_predict,
+                prompt,
+                system_prompt,
+            )
         if system_prompt:
             # Ollama supports a separate system field. We use it for stable AMADEUS rules/identity.
             payload["system"] = system_prompt
+        if self.think is not None:
+            # Canvas uses final-answer mode so reasoning traces do not replace or delay the visible block.
+            payload["think"] = self.think
 
         data = self._post_json("/api/generate", payload)
         response = data.get("response")
@@ -53,10 +67,25 @@ class OllamaClient:
             raise OllamaClientError("Ollama returned a response AMADEUS could not read.")
 
         clean_response = response.strip()
+        if not clean_response and num_predict == 0:
+            # NONE can still exercise the request lifecycle without yielding visible prose.
+            return ""
         if not clean_response:
             raise OllamaClientError("Ollama returned an empty response.")
 
         return clean_response
+
+    def _clamp_num_predict(self, requested_tokens: int, prompt: str, system_prompt: str | None) -> int:
+        """Keep policy budgets within the configured Ollama context window.
+
+        Ollama exposes no model-capability API in this small client, so the active
+        ``num_ctx`` is the reliable local ceiling. The estimate is deliberately
+        conservative and leaves room for provider framing and the response.
+        """
+        input_characters = len(prompt) + len(system_prompt or "")
+        estimated_input_tokens = (input_characters + 3) // 4
+        remaining_context = max(0, DEFAULT_OLLAMA_CONTEXT_TOKENS - estimated_input_tokens - CONTEXT_SAFETY_MARGIN_TOKENS)
+        return min(max(0, requested_tokens), remaining_context)
 
     def health_check(self) -> dict[str, object]:
         """Return basic Ollama availability and model status information."""
