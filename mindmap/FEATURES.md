@@ -90,3 +90,8 @@
 ## Code polish - 2026-09-14
 
 - Node/link/import dialogs and the canvas surface have focused GUI components inside Mind Map. Existing view imports remain compatible; graph operations still route through Core.
+## Drag responsiveness fix - 2026-09-15
+
+- Manual node dragging pauses graph physics and defers background snapshots so the node follows the pointer without refresh snapback.
+- Position saves keep the canvas interactive. Rapid moves are serialized through Core, keeping the latest unsent position for each node, including after a failed save.
+- Snapshot rendering builds the projected position map once. Locked/pinned node protection and explicit Force Layout remain unchanged.

@@ -89,6 +89,10 @@ class MindMapView(QWidget):
         self._refreshing = False
         self._busy = False
         self._refresh_pending = False
+        self._dragging_node_ids: set[str] = set()
+        self._pending_node_positions: dict[str, tuple[float, float]] = {}
+        self._saving_node_position = False
+        self._shutting_down = False
         self._after_refresh: list[Callable[[], None]] = []
         self._resume_physics_after_refresh = False
         self._active_threads: list[QThread] = []
@@ -331,13 +335,23 @@ class MindMapView(QWidget):
         return panel
 
     def refresh_graph(self) -> None:
-        if self._refreshing or self._busy:
+        if self._shutting_down:
+            return
+        if self._refreshing or self._busy or self._dragging_node_ids or self._pending_node_positions:
             self._refresh_pending = True
             return
         self._refreshing = True
-        self._run_core(self.core.get_mind_map_snapshot, self._render_snapshot, "Refreshing graph")
+        self._run_core(
+            self.core.get_mind_map_snapshot, self._render_snapshot, "Refreshing graph",
+            keep_canvas_interactive=bool(self.node_items),
+        )
 
     def _render_snapshot(self, snapshot: object) -> None:
+        # A read started before a gesture may contain its old persisted position.
+        if self._dragging_node_ids or self._pending_node_positions or self._saving_node_position:
+            self._refreshing = False
+            self._refresh_pending = True
+            return
         selected_node_ids = {
             item.node_id for item in self.scene.selectedItems() if isinstance(item, GraphNodeItem)
         }
@@ -354,6 +368,7 @@ class MindMapView(QWidget):
             layout_signature = self._physics_signature(snapshot)
             topology_changed = layout_signature != self._layout_signature
             projected_physics = GraphPhysics(snapshot)
+            projected_positions = projected_physics.positions()
 
             # Links must leave before their endpoint items can be removed.
             for link_id, item in tuple(self.link_items.items()):
@@ -385,7 +400,7 @@ class MindMapView(QWidget):
                         opacity=opacity,
                         layer_score=layer_score,
                     )
-                    projected_position = projected_physics.positions()[node.node_id]
+                    projected_position = projected_positions[node.node_id]
                     item.set_visual_position(*projected_position)
                     self.scene.addItem(item)
                     self.node_items[node.node_id] = item
@@ -398,7 +413,7 @@ class MindMapView(QWidget):
                         opacity=opacity,
                         layer_score=layer_score,
                     )
-                    item.set_visual_position(*projected_physics.positions()[node.node_id])
+                    item.set_visual_position(*projected_positions[node.node_id])
 
             for link in snapshot.links:
                 item = self.link_items.get(link.link_id)
@@ -468,6 +483,8 @@ class MindMapView(QWidget):
 
     def _start_physics_motion(self) -> None:
         """Start bounded visual-only motion for graphs safe to simulate in the GUI."""
+        if self._dragging_node_ids or self._pending_node_positions or self._saving_node_position:
+            return
         if self.physics is None or len(self.physics.nodes) < 2:
             return
         if len(self.physics.nodes) > self.MAX_LIVE_SIMULATION_NODES:
@@ -481,7 +498,7 @@ class MindMapView(QWidget):
 
     def _advance_physics(self) -> None:
         """Apply one inexpensive visual physics tick and stop after stability."""
-        if self.physics is None:
+        if self.physics is None or self._dragging_node_ids:
             self._stop_physics_motion()
             return
         movement = self.physics.step()
@@ -720,12 +737,13 @@ class MindMapView(QWidget):
         busy_text: str,
         *,
         error_title: str | None = None,
+        keep_canvas_interactive: bool = False,
     ) -> None:
         """Use the established worker lifecycle; slots update Qt widgets on the GUI thread."""
         if self._busy:
             self._refresh_pending = True
             return
-        self._set_busy(True, busy_text)
+        self._set_busy(True, busy_text, keep_canvas_interactive=keep_canvas_interactive)
         thread = QThread(self)
         worker = MindMapWorker(operation)
         worker.moveToThread(thread)
@@ -744,9 +762,11 @@ class MindMapView(QWidget):
         self._active_workers.append(worker)
         thread.start()
 
-    def _set_busy(self, busy: bool, message: str = "") -> None:
+    def _set_busy(
+        self, busy: bool, message: str = "", *, keep_canvas_interactive: bool = False,
+    ) -> None:
         self._busy = busy
-        self.canvas.setEnabled(not busy)
+        self.canvas.setEnabled(not busy or keep_canvas_interactive or bool(self._dragging_node_ids))
         for widget in self._busy_widgets:
             widget.setEnabled(not busy)
         self.quick_edit_button.setEnabled(False)
@@ -763,7 +783,11 @@ class MindMapView(QWidget):
             self._active_threads.remove(thread)
         if worker in self._active_workers:
             self._active_workers.remove(worker)
+        self._saving_node_position = False
         self._set_busy(False)
+        self._drain_position_saves()
+        if self._busy:
+            return
         if self._refresh_pending:
             self._refresh_pending = False
             self.refresh_graph()
@@ -779,13 +803,13 @@ class MindMapView(QWidget):
         signals target that view. A nested Qt loop, rather than ``QThread.wait()``,
         lets the worker retain the Python interpreter while it completes.
         """
-        for thread in tuple(self._active_threads):
-            if thread.isRunning():
-                loop = QEventLoop(self)
-                thread.finished.connect(loop.quit)
-                loop.exec()
-        self._active_threads.clear()
-        self._active_workers.clear()
+        self._shutting_down = True
+        # A finishing position save may launch another queued move. Keep the
+        # GUI event loop alive until all completion slots and queued saves drain.
+        while self._active_threads or self._busy:
+            loop = QEventLoop(self)
+            QTimer.singleShot(10, loop.quit)
+            loop.exec()
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt uses camelCase names.
         self._stop_physics_motion()
@@ -979,37 +1003,58 @@ class MindMapView(QWidget):
         self._run_core(delete_selected, lambda _result: self.refresh_graph(), "Deleting graph objects")
 
     def _begin_node_drag(self, node_id: str) -> None:
-        """Wake visual physics and anchor the actively dragged node."""
-        self.canvas.set_fast_drag_mode(True)
-        if self.physics is None or node_id not in self.physics.nodes:
+        """Pause graph-wide work while the pointer directly controls a node."""
+        node = self._nodes_by_id.get(node_id)
+        if node is None or node.position_locked or node.metadata.get("mindmap_pinned", False):
             return
-        self.physics.start_drag(node_id)
-        self._physics_ticks = 0
-        self._settled_physics_ticks = 0
-        if len(self.physics.nodes) <= self.MAX_LIVE_SIMULATION_NODES:
-            self._physics_timer.start()
+        self._dragging_node_ids.add(node_id)
+        self._stop_physics_motion()
+        self._resume_physics_after_refresh = False
+        self.canvas.set_fast_drag_mode(True)
+        if self.physics is not None and node_id in self.physics.nodes:
+            self.physics.start_drag(node_id)
 
     def _update_node_drag(self, node_id: str, x: float, y: float) -> None:
-        """Move the physics anchor during drag so neighboring nodes keep reacting."""
+        """Keep the physics anchor current without simulating other nodes."""
         if self.physics is not None and node_id in self.physics.nodes:
             self.physics.drag_to(node_id, x, y)
 
     def _persist_node_position(self, node_id: str, x: float, y: float) -> None:
-        self.canvas.set_fast_drag_mode(False)
-        node = self._nodes_by_id.get(node_id)
-        if self._refreshing or node is None or node.position_locked or node.metadata.get("mindmap_pinned", False):
-            return
+        """Queue the latest release position, including releases during a save."""
+        self._dragging_node_ids.discard(node_id)
+        self.canvas.set_fast_drag_mode(bool(self._dragging_node_ids))
         if self.physics is not None and node_id in self.physics.nodes:
             self.physics.drag_to(node_id, x, y)
             self.physics.stop_drag(node_id)
-        if not self._busy:
-            self._resume_physics_after_refresh = True
+        node = self._nodes_by_id.get(node_id)
+        if node is not None and not node.position_locked and not node.metadata.get("mindmap_pinned", False):
+            self._pending_node_positions[node_id] = (x, y)
+        self._drain_position_saves()
+        if not self._busy and self._refresh_pending:
+            self._refresh_pending = False
+            self.refresh_graph()
+
+    def _drain_position_saves(self) -> None:
+        """Serialize coalesced moves through Core before reading another snapshot."""
+        if self._busy:
+            return
+        while self._pending_node_positions:
+            node_id = next(iter(self._pending_node_positions))
+            x, y = self._pending_node_positions.pop(node_id)
+            node = self._nodes_by_id.get(node_id)
+            if node is None or node.position_locked or node.metadata.get("mindmap_pinned", False):
+                continue
+            self._saving_node_position = True
+            # Refresh even when Core does not publish a change, or a save fails.
+            self._refresh_pending = True
             self._run_core(
                 lambda: self.core.move_mind_map_node(node_id, x, y),
                 lambda _result: None,
                 "Saving position",
                 error_title="Position save failed",
+                keep_canvas_interactive=True,
             )
+            return
 
     def _auto_layout(self) -> None:
         if self.physics is None or not self.physics.nodes:

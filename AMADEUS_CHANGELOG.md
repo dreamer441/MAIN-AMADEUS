@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-09-15 - Mind Map Drag Responsiveness
+
+- Date: 2026-09-15.
+- Phase: Mind Map interaction stability.
+- Feature or fix: Stop node dragging from competing with graph physics and background saves/refreshes.
+- What changed: Manual gestures pause simulation; snapshots defer while dragging or while a position is unsaved. Position writes keep the canvas enabled and serialize the latest queued position per node through Core. Shutdown drains queued saves. Snapshot rendering builds the projected position map once instead of rebuilding it for every node.
+- Files/modules affected: `mindmap/gui/view.py`, `tests/test_mindmap_drag.py`, Mind Map FEATURES/FUTURE_UPDATES, the drag-fix plan and this changelog.
+- User-visible behavior: Nodes follow the pointer without graph-wide motion or refresh snapback. Rapid moves are retained while saving, and closing waits for outstanding position saves. Locked/pinned nodes remain protected; Force Layout remains available.
+- Architecture notes: Gesture and pending-position state belong to the GUI; persistence and validation remain behind existing Core routes. No data schema, source-owner or permission changes.
+- Tests performed: Six focused regressions cover real viewport pointer dragging, paused physics/deferred refresh, slow and failed saves, latest-position coalescing, closing during queued saves, and one position-map construction per snapshot. Compileall passed. Full-suite discovery passed 341 tests; the targeted suite additionally verified the later shutdown regression. Independent review found no blocking issue.
+- Known limitations: A slow storage operation can still delay persistence or final shutdown, but position saves no longer disable the canvas. Save failures retain the existing visible error dialog. Interactive testing on the user's populated graph remains a manual check.
+
 ## 2026-09-15 - Behavior Preserving Code Polish
 
 - Date: 2026-09-15 (implementation began 2026-09-14).

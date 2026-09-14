@@ -53,3 +53,6 @@
 ## Code polish - 2026-09-14
 
 - Keep future form changes in the dialog owner and navigation/drawing behavior in the surface. Shared form helpers must preserve existing widget defaults and validation.
+## Drag responsiveness follow-up - 2026-09-15
+
+- Preserve gesture priority over physics and snapshot refreshes when extending live layouts. Keep queued position persistence through Core and verify slow/failing storage plus window shutdown.
