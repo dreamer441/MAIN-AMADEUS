@@ -43,3 +43,5 @@ Do not use Context Builder as a substitute for deterministic file inspection. Ex
 ## Core ownership cleanup — 2026-09-12
 
 - Ownership direction: Evolve context budgets and typed provider contracts without moving selection back into Core or GUI.
+
+- Keep inferred inventories read-only and separate from display handlers, especially export handlers that write files. Any richer inferred retrieval needs explicit selection and scope contracts first.

@@ -47,20 +47,21 @@ class FlowChatService:
         self.flow_chat_store = flow_chat_store
         self.identity_prompt_builder = identity_prompt_builder
         self.create_pending_action = create_pending_action
-        # Core owns inference and annotation handling; Flow receives only safe text context.
+        # The request workflow owns inference; Flow receives only prepared text context.
         self.inferred_read_context_provider = inferred_read_context_provider
 
-    def handle_message(self, message: str, trace_logger: TraceLogger) -> FlowExecutionResult:
+    def handle_message(self, message: str, trace_logger: TraceLogger, *, inferred_read_context: str | None = None) -> FlowExecutionResult:
         """Build Flow context, call Chat, and atomically save a successful exchange."""
         try:
             review_request = FlowReviewRequest.parse(message)
         except ValueError as error:
             return FlowExecutionResult(error=error)
-        inferred_read_context = (
-            self.inferred_read_context_provider(message)
-            if review_request is None and self.inferred_read_context_provider is not None
-            else None
-        )
+        if review_request is not None:
+            inferred_read_context = None
+        elif inferred_read_context is None and self.inferred_read_context_provider is not None:
+            # Legacy standalone consumers may still inject a provider. Composed Flow
+            # passes its already analyzed context so it never runs the model twice.
+            inferred_read_context = self.inferred_read_context_provider(message)
         context_bundle = self.flow_context_builder.build_for_message(message, trace_logger=trace_logger)
         llm_message = review_request.question if review_request is not None else message
         try:

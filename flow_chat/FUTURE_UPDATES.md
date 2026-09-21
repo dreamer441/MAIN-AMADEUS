@@ -9,7 +9,7 @@
 - Keep `/review` explicit and read-only; broader intent-to-command routing belongs to a future Second Brain boundary.
 - Keep `/create-chat` explicit; Inner Brain creation intent must remain limited to the approved `chat`, `sheet`, and `memory` kinds.
 - Keep workspace creation restricted to registered Core approval requests; do not add arbitrary command, filesystem, or model-provided action routing.
-- Keep Flow advisory inference constrained to Core-injected, no-argument existing read-handler output and Core pending actions; do not accept model-provided locators.
+- Keep Flow advisory inference constrained to Context Builder's bounded read-only inventories and registered pending actions; do not accept model-provided locators or retrieve dedicated-chat bodies.
 - Keep Habit Tracker natural-language aliases bounded and deterministic; do not
   introduce LLM-derived task fields, dates, identifiers, or write actions.
 - Keep one-time task default-date behavior and bounded priority phrases inside the

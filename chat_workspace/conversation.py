@@ -216,7 +216,7 @@ class ChatConversation:
                 )
                 return self.responses.build_response_payload(response, trace_logger, side_panel=side_panel)
 
-            inferred_analysis = self.advisor.analyze_plain_message(clean_message)
+            inferred_analysis = self.advisor.analyze_plain_message(clean_message, trace_logger=trace_logger)
             pending = self.creation_requests.pending_action_from_inference(inferred_analysis, clean_message, route="chat")
             if pending is not None:
                 self.exchanges.persist_completed_exchange(clean_message, "", trace_logger)

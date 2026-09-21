@@ -32,7 +32,14 @@ class ChatMetadataService:
         if chat is None:
             raise ValueError(f"Unknown chat id: {target_id}")
         transcript = "\n".join(f"{item.speaker}: {item.message}" for item in self.chat_history_store.load_messages(100000, target_id))
+        if not transcript.strip():
+            raise ValueError("This chat has no messages to analyze. Existing Chat Data was kept.")
         analysis = self.inner_brain_service.analyze_chat(transcript)
+        if not analysis.succeeded or not all((
+            analysis.title, analysis.description, analysis.short_bullets, analysis.detailed_summary,
+        )):
+            # Failed refreshes must not destroy the last successful analysis or claim success.
+            raise ValueError("Inner Brain could not produce a complete analysis. Existing Chat Data was kept. Check the local model and retry.")
         previous = chat.inner_brain_analysis
         record = ChatInnerBrainAnalysis(
             generated_at=datetime.now(timezone.utc).isoformat(), model=analysis.model,

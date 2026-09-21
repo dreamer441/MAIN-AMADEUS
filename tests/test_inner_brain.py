@@ -2,6 +2,7 @@
 
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
 from pathlib import Path
 
 from amadeus_core import AmadeusCore
@@ -26,6 +27,111 @@ class _FakeChatClient:
 
 
 class InnerBrainServiceTests(unittest.TestCase):
+    def test_flow_inventory_keeps_chat_sheet_bodies_and_titles_out(self):
+        with tempfile.TemporaryDirectory() as directory:
+            inner = type('Inner', (), {'analyze_message': lambda *a, **k: InnerBrainAnalysis(read_annotation='sheet')})()
+            primary = _FakeChatClient()
+            core = AmadeusCore(project_root=Path(directory), llm_client=primary, inner_brain_service=inner)
+            core.sheet_service.create_sheet('Private sheet title', content='PRIVATE BODY', chat_id=core.get_current_chat_id())
+            core.sheet_service.create_sheet('Public plan', content='GLOBAL BODY', scope='global')
+            core.handle_flow_message('List my sheets')
+            self.assertIn('Public plan', primary.prompts[-1])
+            for hidden in ('Private sheet title', 'PRIVATE BODY', 'GLOBAL BODY'):
+                self.assertNotIn(hidden, primary.prompts[-1])
+            core.handle_user_message('List my sheets')
+            self.assertIn('Private sheet title', primary.prompts[-1])
+            self.assertNotIn('PRIVATE BODY', primary.prompts[-1])
+
+    def test_graph_hint_returns_real_inventory_without_node_bodies(self):
+        with tempfile.TemporaryDirectory() as directory:
+            inner = type('Inner', (), {'analyze_message': lambda *a, **k: InnerBrainAnalysis(read_annotation='mindmap')})()
+            primary = _FakeChatClient()
+            core = AmadeusCore(project_root=Path(directory), llm_client=primary, inner_brain_service=inner)
+            core.mind_map_module.create_node(title='Weather project', node_type='idea', content='PRIVATE NODE BODY')
+            core.handle_flow_message('Show my mind map')
+            self.assertIn('Weather project', primary.prompts[-1])
+            self.assertNotIn('PRIVATE NODE BODY', primary.prompts[-1])
+
+    def test_advisor_failure_is_visible_but_primary_chat_still_answers(self):
+        class BrokenBrain:
+            def analyze_message(self, *args, **kwargs):
+                raise TimeoutError('private backend error')
+        with tempfile.TemporaryDirectory() as directory:
+            primary = _FakeChatClient()
+            core = AmadeusCore(project_root=Path(directory), llm_client=primary, inner_brain_service=BrokenBrain())
+            for handle in (core.handle_user_message, core.handle_flow_message):
+                result = handle('Hello')
+                self.assertEqual('answer', result['response'])
+                self.assertIn('Inner Brain Unavailable', [event['title'] for event in result['trace_events']])
+                self.assertNotIn('private backend error', str(result))
+
+    def test_explicit_commands_do_not_call_advisor_even_when_exceptions_are_swallowed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            inner = type('Inner', (), {})()
+            inner.analyze_message = Mock(side_effect=AssertionError('must not run'))
+            core = AmadeusCore(project_root=Path(directory), llm_client=_FakeChatClient(), inner_brain_service=inner)
+            core.handle_user_message('[file]')
+            core.handle_flow_message('/review summarize')
+            inner.analyze_message.assert_not_called()
+
+    def test_failure_is_distinct_from_successful_no_intent(self):
+        for raw in ('not json', '[]', '{"read_annotation": ["file"]}'):
+            with self.subTest(raw=raw):
+                analysis = InnerBrainService(_FakeInnerClient(raw)).analyze_message('hello')
+                self.assertFalse(analysis.succeeded)
+                self.assertEqual('', analysis.read_annotation)
+        self.assertTrue(InnerBrainService(_FakeInnerClient('{}')).analyze_message('hello').succeeded)
+
+    def test_model_attribution_and_recent_transcript_are_preserved(self):
+        client = _FakeChatClient()
+        client.model = 'test-model'
+        service = InnerBrainService(client)
+        service.analyze_chat('EARLY FACT ' + 'x' * 14000 + ' RECENT CORRECTION')
+        self.assertEqual('test-model', service.model)
+        self.assertIn('EARLY FACT', client.prompts[0])
+        self.assertIn('RECENT CORRECTION', client.prompts[0])
+
+    def test_inner_client_requests_json_without_changing_primary_defaults(self):
+        with tempfile.TemporaryDirectory() as directory:
+            core = AmadeusCore(project_root=Path(directory))
+            secondary = core.inner_brain_service._client
+            captured = {}
+            secondary._post_json = lambda path, payload: captured.update(payload) or {'response': '{}'}
+            core.inner_brain_service.analyze_message('hello')
+            self.assertEqual('json', captured['format'])
+            self.assertEqual(0, captured['options']['temperature'])
+            self.assertIs(False, captured['think'])
+            self.assertEqual(30, secondary.timeout_seconds)
+            self.assertEqual(0.7, core.llm_client.temperature)
+            self.assertIsNone(core.llm_client.response_format)
+
+    def test_inferred_export_never_creates_or_refreshes_an_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            inner = type('Inner', (), {'analyze_message': lambda *a, **k: InnerBrainAnalysis(read_annotation='export')})()
+            primary = _FakeChatClient()
+            core = AmadeusCore(project_root=Path(directory), llm_client=primary, inner_brain_service=inner)
+            core.chat_history_store.append_message('User', 'PRIVATE TRANSCRIPT')
+            with patch.object(core.export_service, 'resolve_selection', side_effect=AssertionError('mutation route')) as mutation:
+                core.handle_user_message('list existing exports')
+                core.handle_flow_message('list existing exports')
+                mutation.assert_not_called()
+            self.assertEqual([], core.export_service.list_exports())
+            self.assertIn('No existing exports', primary.prompts[-1])
+
+    def test_ungrounded_metadata_target_cannot_broaden_to_all_modules(self):
+        result = InnerBrainService(_FakeInnerClient(
+            '{"read_annotation":"metadata","metadata_module":"secrets_module",'
+            '"metadata_document_kind":"features","metadata_mode":"open"}'
+        )).analyze_message('show memory features')
+        self.assertEqual('', result.metadata_mode)
+
+    def test_general_evidence_question_cannot_open_all_module_documents(self):
+        result = InnerBrainService(_FakeInnerClient(
+            '{"read_annotation":"metadata","metadata_module":"",'
+            '"metadata_document_kind":"both","metadata_mode":"open"}'
+        )).analyze_message('What workspace evidence is linked?')
+        self.assertEqual('', result.read_annotation)
+
     def test_strict_json_accepts_only_bounded_allow_lists(self) -> None:
         service = InnerBrainService(_FakeInnerClient(
             '{"read_annotation":"file","title":"title","description":"description",'
@@ -173,6 +279,28 @@ class InnerBrainServiceTests(unittest.TestCase):
 
 
 class InnerBrainMetadataTests(unittest.TestCase):
+    def test_empty_chat_refresh_does_not_invent_an_analysis(self):
+        with tempfile.TemporaryDirectory() as directory:
+            service = InnerBrainService(_FakeInnerClient('{}'))
+            core = AmadeusCore(project_root=Path(directory), llm_client=_FakeChatClient(), inner_brain_service=service)
+            with patch.object(service, 'analyze_chat') as analyze:
+                with self.assertRaises(ValueError):
+                    core.refresh_chat_inner_brain()
+                analyze.assert_not_called()
+
+    def test_failed_refresh_preserves_existing_analysis(self):
+        with tempfile.TemporaryDirectory() as directory:
+            client = _FakeInnerClient('{"title":"Title","description":"Description","short_bullets":["Fact"],"detailed_summary":"Saved summary"}')
+            core = AmadeusCore(project_root=Path(directory), llm_client=_FakeChatClient(), inner_brain_service=InnerBrainService(client))
+            core.chat_history_store.append_message('User', 'Fact')
+            core.refresh_chat_inner_brain()
+            previous = core.chat_history_store.get_current_chat().inner_brain_analysis
+            for raw in ('not json', '{}', '{"title":"Incomplete"}'):
+                client.response = raw
+                with self.subTest(raw=raw), self.assertRaises(ValueError):
+                    core.refresh_chat_inner_brain()
+                self.assertEqual(previous, core.chat_history_store.get_current_chat().inner_brain_analysis)
+
     def test_explicit_refresh_preserves_manual_fields_and_export_updates_reference_only(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             service = InnerBrainService(_FakeInnerClient(

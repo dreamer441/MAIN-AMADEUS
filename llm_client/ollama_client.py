@@ -29,12 +29,16 @@ class OllamaClient:
         host: str = DEFAULT_OLLAMA_HOST,
         timeout_seconds: int = 600,
         think: bool | None = None,
+        response_format: str | None = None,
+        temperature: float = 0.7,
     ) -> None:
         # Keep Ollama settings centralized so future model selection is easy to add.
         self.model = model
         self.host = host.rstrip("/")
         self.timeout_seconds = timeout_seconds
         self.think = think
+        self.response_format = response_format
+        self.temperature = temperature
 
     def generate(self, prompt: str, system_prompt: str | None = None, num_predict: int | None = None) -> str:
         """Send a prompt to Ollama and return the generated response text."""
@@ -43,7 +47,7 @@ class OllamaClient:
             "prompt": prompt,
             "stream": False,
             "options": {
-                "temperature": 0.7,
+                "temperature": self.temperature,
                 "num_ctx": DEFAULT_OLLAMA_CONTEXT_TOKENS,
             },
         }
@@ -60,6 +64,9 @@ class OllamaClient:
         if self.think is not None:
             # Canvas uses final-answer mode so reasoning traces do not replace or delay the visible block.
             payload["think"] = self.think
+        if self.response_format is not None:
+            # Structured advisory clients opt in; ordinary chat defaults are unchanged.
+            payload["format"] = self.response_format
 
         data = self._post_json("/api/generate", payload)
         response = data.get("response")

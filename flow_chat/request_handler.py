@@ -93,7 +93,7 @@ class FlowRequestHandler:
             inferred_analysis = (
                 InnerBrainAnalysis()
                 if clean_message.startswith("/review")
-                else self.advisor.analyze_plain_message(clean_message, route="flow")
+                else self.advisor.analyze_plain_message(clean_message, route="flow", trace_logger=trace_logger)
             )
             pending = self.creation_requests.pending_action_from_inference(inferred_analysis, clean_message, route="flow")
             if pending is not None:
@@ -107,7 +107,12 @@ class FlowRequestHandler:
                 summary="Declared route: load eligible Flow context, prepare an answer through the configured LLM, then store the completed Flow exchange.",
                 route_intent="flow_context_llm_persist",
             )
-            execution = self.flow_chat_service.handle_message(clean_message, trace_logger)
+            inferred_context = self.advisor.combine_callable_context(
+                None, self.advisor.resolve_inferred_read_context(inferred_analysis, route="flow"),
+            )
+            execution = self.flow_chat_service.handle_message(
+                clean_message, trace_logger, inferred_read_context=inferred_context,
+            )
             if not execution.succeeded:
                 if isinstance(execution.error, ValueError):
                     trace_logger.complete_run(title="Flow Output Returned", summary="Flow command validation response returned to GUI.")

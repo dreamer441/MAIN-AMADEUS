@@ -632,7 +632,7 @@ class FlowContextAndCoreTests(unittest.TestCase):
         core.handle_flow_message("show safe project context")
 
         self.assertEqual([("show safe project context", "flow")], inner_brain.calls)
-        self.assertNotIn("[SAFE INFERRED READ CONTEXT]", llm.prompts[-1])
+        self.assertIn("[SAFE INFERRED READ CONTEXT]", llm.prompts[-1])
         self.assertEqual([], write_calls)
 
     def test_explicit_flow_commands_skip_inner_brain_inference(self) -> None:
@@ -679,7 +679,7 @@ class FlowContextAndCoreTests(unittest.TestCase):
 
     def test_successful_flow_events_are_ordered_and_share_one_run(self) -> None:
         llm = _FakeLLM()
-        core = AmadeusCore(llm_client=llm, project_root=self.root)
+        core = AmadeusCore(llm_client=llm, project_root=self.root, inner_brain_service=_FakeInnerBrain())
         live_events: list[dict[str, object]] = []
 
         result = core.handle_flow_message("Hello Flow", event_listener=live_events.append)
@@ -688,6 +688,8 @@ class FlowContextAndCoreTests(unittest.TestCase):
         self.assertEqual(
             [
                 "Flow Request Received",
+                "Inner Brain Analysis",
+                "Inner Brain Ready",
                 "Flow Chat Work Plan",
                 "Flow Context Started",
                 "Dedicated Chat Registry Requested",

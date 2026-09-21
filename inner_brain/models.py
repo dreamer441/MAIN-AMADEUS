@@ -23,6 +23,12 @@ class InnerBrainAnalysis:
     suggested_write_actions: tuple[str, ...] = ()
     creation_kind: str = ""
     model: str = "nemotron-3-nano:4b"
+    error: str = ""
+
+    @property
+    def succeeded(self) -> bool:
+        """Distinguish a valid no-intent result from unavailable or malformed analysis."""
+        return not self.error
 
     @property
     def metadata_fields(self) -> tuple[str, str]:

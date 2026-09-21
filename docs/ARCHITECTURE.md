@@ -80,6 +80,16 @@ approval consumes the request before dispatch, including when the owner fails.
 Existing direct user edits continue through owner validation. This guard is not
 a general filesystem, shell or operating-system sandbox.
 
+## Inner Brain reliability
+
+Inner Brain reliability was repaired on 2026-09-21. It remains a separate local
+advisory model using JSON output, with safe failure status. Chat and Flow use its
+read hints through Context Builder's read-only inventories; Flow receives the
+already resolved result without a duplicate inference call. No inferred export
+writes files or loads dedicated-chat bodies. Chat Metadata retains the previous
+analysis when explicit refresh fails or returns incomplete output. Web search
+and web-context preparation remain planned.
+
 ## Foundations still pending
 
 `reasoning_module` and `skills` remain deliberate placeholders. Inner Brain is

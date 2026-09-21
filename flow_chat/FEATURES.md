@@ -1,5 +1,11 @@
 # Flow Chat Features
 
+## Inner Brain repair — 2026-09-21
+
+- Plain requests now pass the existing advisory result's bounded read context to the primary chat model without a second Inner Brain call.
+- Inferred context contains inventories rather than dedicated-chat bodies; sheet inventory is global only. Metadata inference remains excluded from Flow.
+- Process Monitor shows advisory analysis success or fallback. Explicit supported commands continue to bypass inference.
+
 ## Implemented Now
 
 - Persistent Flow home conversation, separate from dedicated chats.
@@ -27,7 +33,7 @@
 - Flow typing `/` uses the same annotation popup as dedicated chat. Arrow keys select, Enter/Tab insert, Escape hides, and Enter sends when the popup is closed.
 - Approved records are projected through Core-owned Mind Map workspace synchronization. Dedicated-chat prompt context includes only direct linked neighbors; global records are not linked to a chat.
 - Flow Sheet and Memory creation defaults to global scope with no linked chat or graph relationship. `; scope: chat` explicitly links the current chat.
-- Plain Flow messages receive only Core-resolved safe no-argument inferred read context. Inner Brain may advisory-detect only chat, sheet, or memory creation; Core still requires GUI approval.
+- Plain Flow messages receive only Context Builder's bounded read-only inventory context. Inner Brain may advisory-detect only chat, sheet, or memory creation; Permissions still requires GUI approval.
 - [x] `/habit` provides deterministic local reads and approval-gated writes for every
    Habit Tracker action: one-time tasks, routines, calendar events, Eisenhower
    tasks, timers, and alarms. Supported natural aliases remain bounded to Habit

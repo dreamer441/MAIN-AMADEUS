@@ -64,7 +64,7 @@ def _conversation(*, chat=None, context_builder=None, exchanges=None, callable_c
         identity_prompt_builder=SimpleNamespace(build_for_chat=lambda **_kwargs: "identity"),
         chat_module_provider=lambda: chat,
         advisor=SimpleNamespace(
-            analyze_plain_message=lambda _message: SimpleNamespace(metadata_mode=None, suggested_write_actions=()),
+            analyze_plain_message=lambda _message, **_kwargs: SimpleNamespace(metadata_mode=None, suggested_write_actions=()),
             resolve_inferred_metadata=lambda _analysis: None,
             resolve_inferred_read_context=lambda _analysis: None,
             combine_callable_context=lambda first, second: first or second,

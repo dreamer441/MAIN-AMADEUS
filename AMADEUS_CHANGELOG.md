@@ -2,6 +2,18 @@
 
 Append-only global project progress log. Module-specific details still belong in each module's `FEATURES.md` and `FUTURE_UPDATES.md`.
 
+## 2026-09-21 - Inner Brain Reliability Repair
+
+- Date: 2026-09-21.
+- Phase: Stabilize the existing second brain before web search.
+- Feature or fix: Restore Flow advisory context, reliable structured model analysis, and non-destructive Chat Data refresh.
+- What changed: The secondary Ollama client uses JSON format, thinking disabled, temperature zero, and a 30-second HTTP timeout. Intent and summary prompts are separate; input retains recent corrections when long transcripts are sampled. Schema failures have explicit safe status. Flow receives the already analyzed context once. Inferred exports use read-only inventories rather than the file-writing export handler; sheets and graph hints expose bounded inventories. Invalid metadata targets and unrelated evidence questions cannot open all module documents. Failed, incomplete, and empty-chat refreshes preserve saved analysis.
+- Files/modules affected: Inner Brain, LLM Client, application composition, Context Builder, Flow Chat, Chat Workspace, associated module FEATURES/FUTURE_UPDATES, architecture documentation, repair plan, and Inner Brain/Flow/annotation regression tests. Added opt-in synthetic live-model tests.
+- User-visible behavior: Plain Flow requests can use verified read context. Process Monitor reports advisory success or fallback. Ordinary chat can continue when Inner Brain fails; Chat Data shows an error instead of replacing a saved summary with blank results. Explicit commands, manual metadata, primary model settings, and approval requirements remain intact.
+- Architecture notes: Core still routes. Inner Brain has no storage or execution access; Context Builder uses public read APIs, conversation owners supply context and persist results, and Permissions protects proposals. Flow does not receive dedicated-chat bodies; inferred sheet inventory in Flow is global only.
+- Tests performed: Added regressions reproduced the original metadata-loss, export-mutation, model-configuration, and context bugs before fixes. Focused Inner Brain suite passed 22 tests. Full offscreen suite discovered 356 tests: 354 passed and two opt-in live tests skipped; both live tests passed separately against installed `nemotron-3-nano:4b`, covering eight synthetic intent cases and one corrected-fact summary. `python -m compileall .` passed. An isolated ignored `.venv` with the existing PyQt6 dependency enabled full GUI regression checks. Initial failures from missing PyQt6 and an outdated advisor test stub were resolved.
+- Known limitations: The live examples are smoke checks, not an accuracy benchmark. Ambiguous model classifications remain possible and actions still require approval. The module-documentation wording guard recognizes English. Long summaries omit the middle of the transcript; explicit Chat Data refresh is still synchronous and can wait for the bounded model call. Web search and web-result preparation remain pending. Interactive desktop use was not manually tested.
+
 ## 2026-09-15 - Mind Map Drag Responsiveness
 
 - Date: 2026-09-15.

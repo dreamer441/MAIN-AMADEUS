@@ -49,3 +49,9 @@ values are included in events.
 ## Core ownership cleanup — 2026-09-12
 
 - Implemented: Bounded inferred read selection lives in InferredContextAdvisor. Literal retrieved Mind Map records are formatted here, separately from conversation execution.
+
+## Advisory retrieval repair — 2026-09-21
+
+- Inferred sheet, export, and Mind Map hints return real, bounded inventories through public read APIs instead of UI-handler success text. No inferred export can create or refresh export files.
+- Flow lists global sheets only; dedicated Chat lists its own and global sheets. Export and graph hints expose titles/counts/types, never stored bodies. Exact content still requires explicit selection.
+- Invalid model targets do not broaden module metadata access. Advisory failure is visible in safe Process Monitor events and does not prevent the primary answer.

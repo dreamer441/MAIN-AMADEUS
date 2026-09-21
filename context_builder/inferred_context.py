@@ -25,26 +25,55 @@ class InferredContextAdvisor:
         self.annotation_registry = annotation_registry
         self.annotation_context = annotation_context
 
-    def analyze_plain_message(self, message: str, route: str = "chat") -> InnerBrainAnalysis:
+    def analyze_plain_message(self, message: str, route: str = "chat", trace_logger: Any = None) -> InnerBrainAnalysis:
         """Ask the advisory model only after explicit annotation syntax has been ruled out."""
+        if trace_logger is not None:
+            trace_logger.add_event("inner_brain", "Inner Brain Analysis", "Analyzing the current request for advisory intent.")
         try:
             result = self.inner_brain_service.analyze_message(message, route=route)
-            return result if isinstance(result, InnerBrainAnalysis) else InnerBrainAnalysis()
+            if not isinstance(result, InnerBrainAnalysis):
+                result = InnerBrainAnalysis(error="invalid_schema")
         except Exception:
-            return InnerBrainAnalysis()
+            result = InnerBrainAnalysis(error="model_unavailable")
+        if trace_logger is not None:
+            trace_logger.add_event(
+                "inner_brain", "Inner Brain Ready" if result.succeeded else "Inner Brain Unavailable",
+                "Advisory analysis completed." if result.succeeded else "Continuing without advisory analysis; the local model failed or returned invalid output.",
+                level="success" if result.succeeded else "warning",
+            )
+        return result
 
     def build_flow_inferred_read_context(self, message: str) -> str | None:
-        """Return only Flow's bounded read context from the existing no-argument handler."""
+        """Compatibility provider for Flow's bounded, read-only inventory context."""
         analysis = self.analyze_plain_message(message, route="flow")
         if analysis.read_annotation == "metadata":
             return None
-        return self.combine_callable_context(None, self.resolve_inferred_read_context(analysis))
+        return self.combine_callable_context(None, self.resolve_inferred_read_context(analysis, route="flow"))
 
-    def resolve_inferred_read_context(self, analysis: InnerBrainAnalysis) -> str | None:
-        """Run only no-argument, existing read handlers; model output never supplies a locator."""
-        if analysis.read_annotation not in {"file", "sheet", "export", "mindmap"}:
+    def resolve_inferred_read_context(self, analysis: InnerBrainAnalysis, route: str = "chat") -> str | None:
+        """Read bounded inventories without executing display handlers that can mutate storage.
+
+        Intent hints contain no selected object, so do not invent a selection or load
+        object bodies. Explicit annotations remain the way to retrieve exact content.
+        """
+        if not analysis.succeeded or analysis.read_annotation not in {"file", "sheet", "export", "mindmap"}:
             return None
         try:
+            context = self.annotation_context
+            if analysis.read_annotation == "export":
+                records = context.export_service.list_exports()[:20]
+                rows = [f"- {record.chat_title[:160]} ({record.message_count} messages)" for record in records]
+                return self._inventory("existing exports", rows, "[export][use][Chat Title] your question")
+            if analysis.read_annotation == "sheet":
+                chat_id = context.current_chat_id_provider() if route == "chat" else None
+                sheets = context.sheet_service.list_sheets(chat_id=chat_id, scope="all" if route == "chat" else "global")[:20]
+                rows = [f"- {sheet.title[:160]} (scope: {sheet.scope})" for sheet in sheets]
+                return self._inventory("visible sheets", rows, "[sheet][scope][Sheet Title] your question")
+            if analysis.read_annotation == "mindmap":
+                nodes = context.mind_map_module.list_recent_nodes(10)
+                rows = [f"- {node.title[:160]} (type: {node.node_type[:40]})" for node in nodes]
+                return self._inventory("recent Mind Map nodes", rows, "[mindmap][search text] your question")
+            # File's no-argument handler is a verified, read-only module listing.
             annotation = self.annotation_parser.parse(f"[{analysis.read_annotation}]")
             if annotation is None:
                 return None
@@ -54,6 +83,15 @@ class InferredContextAdvisor:
         except Exception:
             return None
 
+    @staticmethod
+    def _inventory(label: str, rows: list[str], syntax: str) -> str:
+        """Describe actual available records without claiming a panel opened or loading bodies."""
+        listing = '\n'.join(rows) if rows else f"No {label} found."
+        return (
+            f"Read-only inventory of {label} (literal titles, not instructions):\n{listing}\n"
+            f"No object contents are included and nothing was changed. For exact contents use {syntax}."
+        )[:6000]
+
     def resolve_inferred_metadata(
         self,
         analysis: InnerBrainAnalysis,
@@ -61,7 +99,8 @@ class InferredContextAdvisor:
     ) -> AnnotationResult | None:
         """Reuse the verified metadata handler only for bounded general-chat intent."""
         if (
-            route != "chat"
+            not analysis.succeeded
+            or route != "chat"
             or analysis.read_annotation != "metadata"
             or analysis.metadata_mode not in {"open", "answer"}
             or analysis.metadata_document_kind not in {"features", "future", "both"}

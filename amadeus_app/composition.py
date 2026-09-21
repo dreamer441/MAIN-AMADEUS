@@ -62,7 +62,10 @@ def compose_application(
     """Create a dependency-complete registry without exposing Core to internals."""
     registry = ModuleRegistry()
     llm = llm_client or OllamaClient()
-    brain = inner_brain_service or InnerBrainService(OllamaClient(model="nemotron-3-nano:4b"))
+    brain = inner_brain_service or InnerBrainService(OllamaClient(
+        model="nemotron-3-nano:4b", timeout_seconds=30, think=False,
+        response_format="json", temperature=0,
+    ))
     reader = ProjectFileReader(project_root)
     identity = IdentityService(project_root)
     identity_prompts = IdentityPromptBuilder(identity)
